@@ -38,7 +38,7 @@ int minlboundcacheremdepth=4;
 
 // mode=0 ==> can use any word
 // mode=1 ==> can only use nice words (2315 list)
-// mode=2 ==> can only use currently possible word (="hard mode")
+// mode=2 ==> can only use currently possible word (what I originally thought was "hard mode", but turns out not to be; hard mode is now handled by the separate program wordle-hard)
 int mode=0,maxg=0,n0=0,n1=0,nth=1,n0th=-1;
 int maxguesses=6;
 int64 cachestats[MAXDEPTH+1]={0},cachemiss[MAXDEPTH+1]={0},entrystats[MAXDEPTH+1][5]={0};
