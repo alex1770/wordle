@@ -1,0 +1,44 @@
+The programs wordle and wordle-hard evaluate how good, on average, different words are as first guesses in the game of Wordle. See http://sonorouschocolate.com/notes/index.php?title=The_best_strategies_for_Wordle for some results and a brief description.
+
+Example usage (each can also apply to wordle-hard):
+
+wordle -n10
+Try to find the best starting word, restricting to the top 10 choices of words at each stage. This is a reduced search which will find an upper bound (7999) for the best score (lower=better).
+
+wordle -n100
+Same but use 100 words at each stage. This will find the best word, SALET, and the upper bound it returns, 7920, happens to be the correct value, but it hasn't proved either of these.
+
+wordle -n100
+Same but use 100 words at each stage. This will find the best word, SALET, and the upper bound it returns, 7920, happens to be the correct value, but it hasn't proved either of these.
+
+wordle -n100 -g5
+As above but restrict to a maximum of five guesses.
+
+wordle -n13000
+Use all words at each stage (because 13000 is >= 12972, the number of test words), so this finds the best word with proof, but it will take a long time to run (probably days). See below for how to share out this work over different cores.
+
+wordle -n100 -s
+Same as wordle -n100, except that all first words are fully evaluated, rather than just lower bounds on most of them.
+In practice -n100 will give very accurate upper bounds. The majority of answers will be correct, and of those than aren't, the majority will only be 1 too high, etc..
+The summary output from this run can be found in the file normal.n100.
+
+wordle -n13000 -w raise
+Fully evaluate the single first choice worse "raise".
+This typically takes seconds (for first choice words other than "raise"), but can take several hours for a really bad first choice word, such as "qajaq".
+
+wordle -n13000 -w raise -p tree.txt
+As above, but also print out the strategy tree in the file tree.txt.
+
+wordle -n13000 -w qajaq b 7920
+Evaluate the single first choice worse "qajaq" where we don't care if the result is bigger than 7920.
+
+wordle -n13000 -t normal.n100
+Evaluate all first choice words from the file normal.n100 in that order(instead of the algorithm making up its own order to evaluate).
+
+wordle -n13000 -s -b7951 -t normal.n100
+As above but where the score cutoff is fixed at 7951 rather than derived from the best word found so far. This will make it faster to evaluate some of the harder words, though it will only return an answer of the form ">=7951".
+This search will give a (proven) list of the top 10 words, because there are 10 that score below 7951.
+
+wordle -n13000 -s -b7951 -t normal.n100,3,12
+As above, but only use lines 3, 15, 27, ... (in steps of 12; first line counts as 0). This is a useful mode for parallelising over different cores/CPUs.
+
