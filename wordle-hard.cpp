@@ -331,7 +331,7 @@ int optimise_inner(list&oktestwords,list&hwsubset,int depth,int beta=infinity,in
   if(depth>0&&nh==2){if(rbest)*rbest=hwsubset[0];return 3;}
   entrystats[depth][1]++;
   if(fast==1)return -1;
-  if(!(rbest||(depth==0&&showtop))){int v=readoptcache(depth,oktestwords,hwsubset);if(v>=0)return v;}
+  if(!(rbest||(depth==0&&(showtop||toplist||topword)))){int v=readoptcache(depth,oktestwords,hwsubset);if(v>=0)return v;}
   entrystats[depth][2]++;
   tick(0);tock(0);// calibration
   if(totentries>=nextmemcheck){
@@ -516,8 +516,10 @@ int optimise_inner(list&oktestwords,list&hwsubset,int depth,int beta=infinity,in
   if(depth==0&&!rbest)printf("Best first guess = %s\n",best>=0?decword(testwords[best]).c_str():"no-legal-guess");
   if(mi>=infinity/2){mi=infinity;exact=1;}
   if(exact){optstats[nh][0]++;optstats[nh][1]+=mi;}
-  if(exact)writeoptcache(depth,oktestwords,hwsubset,mi);
-  if(!exact)writelboundcache(depth,oktestwords,hwsubset,mi);
+  if(!(depth==0&&(toplist||topword))){
+    if(exact)writeoptcache(depth,oktestwords,hwsubset,mi);
+    if(!exact)writelboundcache(depth,oktestwords,hwsubset,mi);
+  }
   if(rbest)*rbest=best;
   return mi;
 }

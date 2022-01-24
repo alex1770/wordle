@@ -244,7 +244,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
   if(depth>0&&nh==2){if(rbest)*rbest=hwsubset[0];return 3;}
   entrystats[depth][1]++;
   if(fast==1)return -1;
-  if(!(rbest||(depth==0&&showtop))){int v=readoptcache(depth,hwsubset);if(v>=0)return v;}
+  if(!(rbest||(depth==0&&(showtop||toplist||topword)))){int v=readoptcache(depth,hwsubset);if(v>=0)return v;}
   entrystats[depth][2]++;
   tick(0);tock(0);// calibration
   
@@ -420,8 +420,10 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
   if(depth==0&&!rbest)printf("Best first guess = %s\n",best>=0?decword(testwords[best]).c_str():"no-legal-guess");
   if(mi>=infinity/2){mi=infinity;exact=1;}
   if(exact){optstats[nh][0]++;optstats[nh][1]+=mi;}
-  if(exact)writeoptcache(depth,hwsubset,mi);
-  if(!exact)writelboundcache(depth,hwsubset,mi);
+  if(!(depth==0&&(toplist||topword))){
+    if(exact)writeoptcache(depth,hwsubset,mi);
+    if(!exact)writelboundcache(depth,hwsubset,mi);
+  }
   if(rbest)*rbest=best;
   return mi;
 }
