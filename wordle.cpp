@@ -50,6 +50,7 @@ int64 tottot=0;
 double nextcheckpoint=0,checkpointinterval=3600;
 int humanorder[243];// Order the 243 scores in alphabetical order
 int depthonly=0;
+int prl=-1;
 
 double cpu(){return clock()/double(CLOCKS_PER_SEC);}
 int timings=0;
@@ -78,6 +79,10 @@ vector<string> split(string in,string sep=" \r\t\n\f\v"){
     rv.push_back(in.substr(i,j-i));
     p=j;
   }
+}
+
+void prs(int n){
+  for(int i=0;i<n;i++)printf(" ");
 }
 
 array2d<UC> load(const char *fn){
@@ -319,6 +324,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
 
   int mi=beta,best=-1,exact=0;
   int clip=beta;//(depth==0&&showtop)?infinity:mi;
+  //int lbound=readlboundcache(depth,hwsubset);
   double cpu0=cpu();
   double cpu1=cpu0;
   for(i=0;i<min(thr,nt);i++){
@@ -385,6 +391,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
       int inc;
       assert(s<242);
       tot-=lb[s];
+      if(depth<=prl){prs(depth*4+2);printf("S%d %s %4d %8.2f %d/%d\n",depth,decscore(s).c_str(),sz,cpu(),k,n);}
       inc=sz+optimise(equiv[s],depth+1,clip-tot-sz);
       assert(inc>=lb[s]);
       tot+=inc;
@@ -415,7 +422,9 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
         nextcheckpoint+=checkpointinterval;
       }
     }
+    if(depth<=prl){prs(depth*4);printf("M%d %s %8.2f %d/%d %lld %d %d\n",depth,decword(testwords[t]).c_str(),cpu(),i,min(thr,nt),tot,clip,mi);}
     if(depthonly&&!(depth==0&&showtop)&&mi<infinity/2)break;
+    //if(!(depth==0&&showtop)&&mi<=lbound)break;
   }
   if(depth==0&&!rbest)printf("Best first guess = %s\n",best>=0?decword(testwords[best]).c_str():"no-legal-guess");
   if(mi>=infinity/2){mi=infinity;exact=1;}
@@ -474,7 +483,7 @@ int main(int ac,char**av){
   int beta=infinity;
   const char*treefn=0,*loadcache=0;
   
-  while(1)switch(getopt(ac,av,"b:dr:R:n:N:m:g:l:p:st:M:Tw:x:")){
+  while(1)switch(getopt(ac,av,"b:dr:R:n:N:m:g:l:p:st:M:Tw:x:z:")){
     case 'b': beta=atoi(optarg);break;
     case 'd': depthonly=1;break;
     case 'l': loadcache=strdup(optarg);break;
@@ -491,6 +500,7 @@ int main(int ac,char**av){
     case 'T': timings=1;break;
     case 'w': topword=strdup(optarg);break;
     case 'x': outdir=strdup(optarg);break;
+    case 'z': prl=atoi(optarg);break;
     case -1: goto ew0;
     default: fprintf(stderr,"Options: b=beta, d enables depth-only mode, n=nth, N=nth at top level, m=mode, g=max guesses, p=print tree filename, s enables showtop, t=toplist filename[,start[,step]], w=topword, T enables timings, x=outdir\n");exit(1);
   }
@@ -544,8 +554,8 @@ int main(int ac,char**av){
   double cpu1=cpu()-cpu0;
   printf("Time taken = %.2fs\n",cpu1);
   for(i=0;i<=maxguesses;i++)if(cachestats[i]||entrystats[i][0])printf("Depth %2d: Entries = %12lld %12lld %12lld    Cache writes reads misses = %12lu %12lld %12lld\n",i,entrystats[i][0],entrystats[i][1],entrystats[i][2],opt[i].size(),cachestats[i],cachemiss[i]);
-  printf("Rates per second:\n");
-  for(i=0;i<=maxguesses;i++)if(cachestats[i]||entrystats[i][0])printf("Depth %2d: Entries = %12g %12g %12g    Cache writes reads misses = %12g %12g %12g\n",i,entrystats[i][0]/cpu1,entrystats[i][1]/cpu1,entrystats[i][2]/cpu1,opt[i].size()/cpu1,cachestats[i]/cpu1,cachemiss[i]/cpu1);
+  //printf("Rates per second:\n");
+  //for(i=0;i<=maxguesses;i++)if(cachestats[i]||entrystats[i][0])printf("Depth %2d: Entries = %12g %12g %12g    Cache writes reads misses = %12g %12g %12g\n",i,entrystats[i][0]/cpu1,entrystats[i][1]/cpu1,entrystats[i][2]/cpu1,opt[i].size()/cpu1,cachestats[i]/cpu1,cachemiss[i]/cpu1);
   writeoptstats();
   savecache();
   prtim();

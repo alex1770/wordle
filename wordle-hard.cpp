@@ -60,6 +60,7 @@ int greenyellowpos[243];
 uint32 greenmask25bit[243];
 vector<uint32> testwords25bit;
 int depthonly=0;
+int prl=-1;
 
 double cpu(){return clock()/double(CLOCKS_PER_SEC);}
 int timings=0;
@@ -88,6 +89,10 @@ vector<string> split(string in,string sep=" \r\t\n\f\v"){
     rv.push_back(in.substr(i,j-i));
     p=j;
   }
+}
+
+void prs(int n){
+  for(int i=0;i<n;i++)printf(" ");
 }
 
 array2d<UC> load(const char *fn){
@@ -331,7 +336,7 @@ int optimise_inner(list&oktestwords,list&hwsubset,int depth,int beta=infinity,in
   if(depth>0&&nh==2){if(rbest)*rbest=hwsubset[0];return 3;}
   entrystats[depth][1]++;
   if(fast==1)return -1;
-  if(!(rbest||(depth==0&&(showtop||toplist||topword)))){int v=readoptcache(depth,oktestwords,hwsubset);if(v>=0)return v;}
+  if(!(rbest||(depth==0&&showtop))){int v=readoptcache(depth,oktestwords,hwsubset);if(v>=0)return v;}
   entrystats[depth][2]++;
   tick(0);tock(0);// calibration
   if(totentries>=nextmemcheck){
@@ -429,6 +434,7 @@ int optimise_inner(list&oktestwords,list&hwsubset,int depth,int beta=infinity,in
       s=sc[t][h];
       equiv[s].push_back(h);
     }
+    if(depth<=prl){prs(depth*4);printf("M%d %s %8.2f %d/%d %d %d\n",depth,decword(testwords[t]).c_str(),cpu(),i,min(thr,nt),clip,mi);}
     tock(2);
     int64 tot=0;
     int ind[243],lb[243];
@@ -481,6 +487,7 @@ int optimise_inner(list&oktestwords,list&hwsubset,int depth,int beta=infinity,in
       int inc;
       assert(s<242);
       tot-=lb[s];
+      if(depth<=prl){prs(depth*4+2);printf("S%d %s %4d %8.2f %d/%d\n",depth,decscore(s).c_str(),sz,cpu(),k,n);}
       if(filtered[s].size()==0)filtered[s]=filter(oktestwords,t,s);
       inc=sz+optimise(filtered[s],equiv[s],depth+1,clip-tot-sz);
       assert(inc>=lb[s]);
@@ -511,15 +518,14 @@ int optimise_inner(list&oktestwords,list&hwsubset,int depth,int beta=infinity,in
         nextcheckpoint+=checkpointinterval;
       }
     }
+    if(depth<=prl){prs(depth*4);printf("N%d %s %8.2f %d/%d %d %d : %lld\n",depth,decword(testwords[t]).c_str(),cpu(),i,min(thr,nt),clip,mi,tot);}
     if(depthonly&&!(depth==0&&showtop)&&mi<infinity/2)break;
   }
   if(depth==0&&!rbest)printf("Best first guess = %s\n",best>=0?decword(testwords[best]).c_str():"no-legal-guess");
   if(mi>=infinity/2){mi=infinity;exact=1;}
   if(exact){optstats[nh][0]++;optstats[nh][1]+=mi;}
-  if(!(depth==0&&(toplist||topword))){
-    if(exact)writeoptcache(depth,oktestwords,hwsubset,mi);
-    if(!exact)writelboundcache(depth,oktestwords,hwsubset,mi);
-  }
+  if(exact)writeoptcache(depth,oktestwords,hwsubset,mi);
+  if(!exact)writelboundcache(depth,oktestwords,hwsubset,mi);
   if(rbest)*rbest=best;
   return mi;
 }
@@ -570,7 +576,7 @@ int main(int ac,char**av){
   int beta=infinity;
   const char*treefn=0,*loadcache=0;
   
-  while(1)switch(getopt(ac,av,"b:dr:R:n:N:m:g:l:p:st:M:Tw:x:")){
+  while(1)switch(getopt(ac,av,"b:dr:R:n:N:m:g:l:p:st:M:Tw:x:z:")){
     case 'b': beta=atoi(optarg);break;
     case 'd': depthonly=1;break;
     case 'l': loadcache=strdup(optarg);break;
@@ -587,6 +593,7 @@ int main(int ac,char**av){
     case 'T': timings=1;break;
     case 'w': topword=strdup(optarg);break;
     case 'x': outdir=strdup(optarg);break;
+    case 'z': prl=atoi(optarg);break;
     case -1: goto ew0;
     default: fprintf(stderr,"Options: b=beta, d enables depth-only mode, n=nth, N=nth at top level, m=mode, g=max guesses, p=print tree filename, s enables showtop, t=toplist filename[,start[,step]], w=topword, T enables timings, x=outdir\n");exit(1);
   }
