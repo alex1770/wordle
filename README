@@ -8,9 +8,6 @@ Try to find the best starting word, restricting to the top 10 choices of words a
 wordle -n100
 Same but use 100 words at each stage. This will find the best word, SALET, and the upper bound it returns, 7920, happens to be the correct value, but it hasn't proved either of these.
 
-wordle -n100
-Same but use 100 words at each stage. This will find the best word, SALET, and the upper bound it returns, 7920, happens to be the correct value, but it hasn't proved either of these.
-
 wordle -n100 -g5
 As above but restrict to a maximum of five guesses.
 
