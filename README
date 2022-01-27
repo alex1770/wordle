@@ -26,7 +26,7 @@ This typically takes seconds (for first choice words other than "raise"), but ca
 wordle -n13000 -w raise -p tree.txt
 As above, but also print out the strategy tree in the file tree.txt.
 
-wordle -n13000 -w qajaq b 7920
+wordle -n13000 -w qajaq -b 7920
 Evaluate the single first choice worse "qajaq" where we don't care if the result is bigger than 7920.
 
 wordle -n13000 -t normal.n100
