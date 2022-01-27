@@ -241,6 +241,12 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
   int i,j,k,n,s,t,nh=hwsubset.size(),remdepth=maxguesses-depth;
   assert(depth<MAXDEPTH);
   entrystats[depth][0]++;
+  if(depth<=prl){
+    prs(depth*4);
+    printf("E%d %4d",depth,nh);
+    for(i=0;i<min(nh,5);i++)printf(" %s",decword(testwords[hwsubset[i]]).c_str());
+    if(i<nh)printf(" ...\n"); else printf("\n");
+  }
   if(rbest)*rbest=-1;
   if(remdepth<=0)return beta;
   if(depth>0&&2*nh-1>=beta)return beta;
@@ -337,6 +343,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
       s=sc[t][h];
       equiv[s].push_back(h);
     }
+    if(depth<=prl){prs(depth*4);printf("M%d %s %8.2f %d/%d %d %d\n",depth,decword(testwords[t]).c_str(),cpu(),i,min(thr,nt),clip,mi);}
     tock(2);
     int64 tot=0;
     int ind[243],lb[243];
@@ -348,10 +355,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
         if(s==242){tot+=1;continue;}
         int o=optimise(equiv[s],depth+1,clip-tot-sz,1);
         if(o>=0){tot+=sz+o;continue;}
-        lb[s]=3*sz-1;
-        // int q=(sz-1)/243,r=(sz-1)%243;
-        // // The perfect test word would be one of the sz and divide the remaining sz-1 into r lots of q+1 and 243-r lots of q
-        // lb[s]=sz+sz+r*(2*(q+1)-1)+(243-r)*max(2*q-1,0);
+        lb[s]=3*sz-1+max(sz-243,0);
         {int v=readlboundcache(depth+1,equiv[s]);if(v>=0)lb[s]=max(lb[s],sz+v);}
         tot+=lb[s];
         ind[n++]=s;
@@ -422,7 +426,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
         nextcheckpoint+=checkpointinterval;
       }
     }
-    if(depth<=prl){prs(depth*4);printf("M%d %s %8.2f %d/%d %lld %d %d\n",depth,decword(testwords[t]).c_str(),cpu(),i,min(thr,nt),tot,clip,mi);}
+    if(depth<=prl){prs(depth*4);printf("N%d %s %8.2f %d/%d %d %d : %lld\n",depth,decword(testwords[t]).c_str(),cpu(),i,min(thr,nt),clip,mi,tot);}
     if(depthonly&&!(depth==0&&showtop)&&mi<infinity/2)break;
     //if(!(depth==0&&showtop)&&mi<=lbound)break;
   }

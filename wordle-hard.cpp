@@ -447,7 +447,7 @@ int optimise_inner(list&oktestwords,list&hwsubset,int depth,int beta=infinity,in
         // Don't need to filter here because oktestwords isn't used in fastmode 1
         int o=optimise(oktestwords,equiv[s],depth+1,clip-tot-sz,1);
         if(o>=0){tot+=sz+o;continue;}
-        lb[s]=3*sz-1;
+        lb[s]=3*sz-1+max(sz-243,0);
         tot+=lb[s];
         ind[n++]=s;
       }
