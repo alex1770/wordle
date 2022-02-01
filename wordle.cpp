@@ -307,9 +307,13 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
     for(i=0;i<nt;i++){
       if(mode<2)t=i; else t=hwsubset[i];
       memset(count,0,sizeof(count));
-      for(j=0;j<nh;j++)count[sc[t][hwsubset[j]]]++;
-      int s2=0,t2=0;
-      for(s=0;s<242;s++){s2+=count[s]*count[s];t2+=(count[s]==0);}
+      int s2=0,t2=243;
+      for(j=0;j<nh;j++){
+        int &c=count[sc[t][hwsubset[j]]];
+        s2+=2*c+1;
+        t2-=(c==0);
+        c++;
+      }
       // Check for 2nd perfect test word, which means we don't need to consider the rest
       if(depth>0&&count[242]==0&&s2==nh){
         writeoptcache(depth,hwsubset,2*nh);
