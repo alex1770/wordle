@@ -41,9 +41,8 @@ int minlboundcacheremdepth=3;
 typedef vector<int> list;
 typedef pair<list,list> list2;
 
-// mode=0 ==> can use any word
-// mode=1 ==> can only use nice words (2315 list)
-// mode=2 ==> can only use currently possible word (what I originally thought was "hard mode")
+// mode=0 ==> can use any word (from 12972 list)
+// mode=1 ==> can only use nice words (from 2315 list)
 int mode=0,maxg=0,n0=0,n1=0,nth=1,n0th=-1;
 int maxguesses=6;
 int64 cachestats[MAXDEPTH+1]={0},cachemiss[MAXDEPTH+1]={0},entrystats[MAXDEPTH+1][5]={0};
@@ -349,7 +348,7 @@ int optimise_inner(list&oktestwords,list&hwsubset,int depth,int beta=infinity,in
     nextmemcheck+=memcheckinterval;
   }
   
-  int nt=oktestwords.size();//(mode==0 ? testwords.rows : (mode==1 ? hiddenwords.rows : hwsubset.size()));
+  int nt=oktestwords.size();
   int thr;
   vector<uint64> s2a(nt);
   if(depth==0&&(toplist||topword)){
@@ -367,7 +366,6 @@ int optimise_inner(list&oktestwords,list&hwsubset,int depth,int beta=infinity,in
     int r=0;
     for(j=start;j>=0&&j<int(fwl.rows);j+=step){
       for(i=0;i<nt;i++){
-        //if(mode<2)t=i; else t=hwsubset[i];// Currently redundant
         t=oktestwords[i];
         if(!memcmp(fwl[j],testwords[t],5))s2a[r++]=uint64(j)<<32|t;
       }
@@ -396,7 +394,6 @@ int optimise_inner(list&oktestwords,list&hwsubset,int depth,int beta=infinity,in
     if(fast==2)return -1;
     tick(1);
     for(i=0;i<nt;i++){
-      //if(mode<2)t=i; else t=hwsubset[i];
       t=oktestwords[i];
       memset(count,0,sizeof(count));
       for(j=0;j<nh;j++)count[sc[t][hwsubset[j]]]++;
@@ -599,9 +596,9 @@ int main(int ac,char**av){
   }
  ew0:;
 
+  assert(mode<2);
   hiddenwords=load("wordlist_hidden");
-  testwords=load("wordlist_all");
-  //testwords=hiddenwords;
+  if(mode==0)testwords=load("wordlist_all"); else testwords=hiddenwords;
   optstats.resize(hiddenwords.rows+1,2);
   if(outdir)mkdir(outdir,0777);
   writewordlist(hiddenwords,"hiddenwords");
