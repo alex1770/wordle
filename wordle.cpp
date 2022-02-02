@@ -36,10 +36,10 @@ int minoptcacheremdepth=2;
 int minlboundcacheremdepth=4;
 #define MAXDEPTH 100
 
-// mode=0 ==> can use any word
-// mode=1 ==> can only use nice words (2315 list)
-// mode=2 ==> can only use currently possible word (what I originally thought was "hard mode", but turns out not to be; hard mode is now handled by the separate program wordle-hard)
-int mode=0,maxg=0,n0=0,n1=0,nth=1,n0th=-1;
+// mode=0 ==> hidden word from  2315 list, test words from 12972 list (default)
+// mode=1 ==> hidden word from  2315 list, test words from  2315 list
+// mode=2 ==> hidden word from 12972 list, test words from 12972 list
+int maxg=0,n0=0,n1=0,nth=1,n0th=-1;
 int maxguesses=6;
 int64 cachestats[MAXDEPTH+1]={0},cachemiss[MAXDEPTH+1]={0},entrystats[MAXDEPTH+1][5]={0};
 array2d<int64> optstats;
@@ -259,7 +259,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
   entrystats[depth][2]++;
   tick(0);tock(0);// calibration
   
-  int nt=(mode==0 ? testwords.rows : (mode==1 ? hiddenwords.rows : hwsubset.size()));
+  int nt=testwords.rows;
   int thr;
   vector<uint64> s2a(nt);
   if(depth==0&&(toplist||topword)){
@@ -276,8 +276,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
     }
     int r=0;
     for(j=start;j>=0&&j<int(fwl.rows);j+=step){
-      for(i=0;i<nt;i++){
-        if(mode<2)t=i; else t=hwsubset[i];// Currently redundant
+      for(t=0;t<nt;t++){
         if(!memcmp(fwl[j],testwords[t],5))s2a[r++]=uint64(j)<<32|t;
       }
     }
@@ -304,8 +303,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
     tock(5);
     if(fast==2)return -1;
     tick(1);
-    for(i=0;i<nt;i++){
-      if(mode<2)t=i; else t=hwsubset[i];
+    for(t=0;t<nt;t++){
       memset(count,0,sizeof(count));
       int s2=0,t2=243;
       for(j=0;j<nh;j++){
@@ -320,7 +318,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
         if(rbest)*rbest=t;
         return 2*nh;
       }
-      s2a[i]=int64(s2mult*s2+nh*t2)<<32|t;
+      s2a[t]=int64(s2mult*s2+nh*t2)<<32|t;
     }
     tock(1);
     // Having not found a perfect testword that splits into singletons, we must require at least 3 guesses in worst case.
@@ -488,7 +486,7 @@ int printtree(vector<int>&hwsubset,int depth,FILE*tfp){
 
 int main(int ac,char**av){
   printf("Commit %s\n",COMMITDESC);
-  int beta=infinity;
+  int beta=infinity,mode=0;
   const char*treefn=0,*loadcache=0;
   
   while(1)switch(getopt(ac,av,"b:dr:R:n:N:m:g:l:p:st:M:Tw:x:z:")){
@@ -514,9 +512,9 @@ int main(int ac,char**av){
   }
  ew0:;
 
-  hiddenwords=load("wordlist_hidden");
-  testwords=load("wordlist_all");
-  //testwords=hiddenwords;
+  if(mode==0){hiddenwords=load("wordlist_hidden");testwords=load("wordlist_all");}
+  if(mode==1){hiddenwords=load("wordlist_hidden");testwords=hiddenwords;}
+  if(mode==2){hiddenwords=load("wordlist_all");testwords=hiddenwords;}
   optstats.resize(hiddenwords.rows+1,2);
   if(outdir)mkdir(outdir,0777);
   writewordlist(hiddenwords,"hiddenwords");

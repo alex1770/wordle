@@ -41,9 +41,10 @@ int minlboundcacheremdepth=3;
 typedef vector<int> list;
 typedef pair<list,list> list2;
 
-// mode=0 ==> can use any word (from 12972 list)
-// mode=1 ==> can only use nice words (from 2315 list)
-int mode=0,maxg=0,n0=0,n1=0,nth=1,n0th=-1;
+// mode=0 ==> hidden word from  2315 list, test words from 12972 list (default)
+// mode=1 ==> hidden word from  2315 list, test words from  2315 list
+// mode=2 ==> hidden word from 12972 list, test words from 12972 list
+int maxg=0,n0=0,n1=0,nth=1,n0th=-1;
 int maxguesses=6;
 int64 cachestats[MAXDEPTH+1]={0},cachemiss[MAXDEPTH+1]={0},entrystats[MAXDEPTH+1][5]={0};
 array2d<int64> optstats;
@@ -574,7 +575,7 @@ int printtree(list oktestwords,list&hwsubset,int depth,FILE*tfp){
 
 int main(int ac,char**av){
   printf("Commit %s\n",COMMITDESC);
-  int beta=infinity;
+  int beta=infinity,mode=0;
   const char*treefn=0,*loadcache=0;
   
   while(1)switch(getopt(ac,av,"b:dr:R:n:N:m:g:l:p:st:M:Tw:x:z:")){
@@ -600,9 +601,9 @@ int main(int ac,char**av){
   }
  ew0:;
 
-  assert(mode<2);
-  hiddenwords=load("wordlist_hidden");
-  if(mode==0)testwords=load("wordlist_all"); else testwords=hiddenwords;
+  if(mode==0){hiddenwords=load("wordlist_hidden");testwords=load("wordlist_all");}
+  if(mode==1){hiddenwords=load("wordlist_hidden");testwords=hiddenwords;}
+  if(mode==2){hiddenwords=load("wordlist_all");testwords=hiddenwords;}
   optstats.resize(hiddenwords.rows+1,2);
   if(outdir)mkdir(outdir,0777);
   writewordlist(hiddenwords,"hiddenwords");
