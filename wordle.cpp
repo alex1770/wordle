@@ -44,7 +44,8 @@ int maxguesses=6;
 int64 cachestats[MAXDEPTH+1]={0},cachemiss[MAXDEPTH+1]={0},entrystats[MAXDEPTH+1][5]={0};
 array2d<int64> optstats;
 map<vector<int>,int> opt[MAXDEPTH+1],lbound[MAXDEPTH+1];
-array2d<UC> sc,testwords,hiddenwords;
+array2d<UC> sc;
+vector<string> testwords,hiddenwords;
 const char*toplist=0,*topword=0;
 int64 tottot=0;
 double nextcheckpoint=0,checkpointinterval=3600;
@@ -85,25 +86,13 @@ void prs(int n){
   for(int i=0;i<n;i++)printf(" ");
 }
 
-array2d<UC> load(const char *fn){
+vector<string> load(const char *fn){
   FILE *fp=fopen(fn,"r");assert(fp);
   char l[1000];
-  vector<string> tmp;
-  array2d<UC> ret;
-  while(fgets(l,1000,fp))tmp.push_back(l);
+  vector<string> ret;
+  while(fgets(l,1000,fp)){l[5]=0;ret.push_back(l);}
   fclose(fp);
-  int n=tmp.size();
-  ret.resize(n,5);
-  for(int i=0;i<n;i++)for(int j=0;j<5;j++)ret[i][j]=tolower(tmp[i][j])-'a';
   return ret;
-}
-
-string decword(UC*w){
-  int i;
-  char ret[6];
-  ret[5]=0;
-  for(i=0;i<5;i++)ret[i]='a'+w[i];
-  return string(ret);
 }
 
 string decscore(int s){
@@ -114,10 +103,10 @@ string decscore(int s){
 }
 
 // Ternary, L->H, 0=black, 1=yellow, 2=green
-int score(UC*test,UC*hidden){
-  UC t[5],h[5];
-  memcpy(t,test,5);
-  memcpy(h,hidden,5);
+int score(string &test,string &hidden){
+  char t[5],h[5];
+  memcpy(t,test.c_str(),5);
+  memcpy(h,hidden.c_str(),5);
   int k,l,s=0,w;
 
   // Greens
@@ -132,7 +121,7 @@ int score(UC*test,UC*hidden){
     w*=3;
   }
       
-  //printf("%s %s %s\n",decword(testwords[i]).c_str(),decword(hiddenwords[j]).c_str(),decscore(s).c_str());
+  //printf("%s %s %s\n",testwords[i].c_str(),hiddenwords[j].c_str(),decscore(s).c_str());
 
   return s;
 }
@@ -141,18 +130,15 @@ void writeoptstats(){
   if(!outdir)return;
   int i;
   FILE*fp=fopen((string(outdir)+"/optstats").c_str(),"w");assert(fp);
-  for(i=0;i<=int(hiddenwords.rows);i++)if(optstats[i][0])fprintf(fp,"%4d   %12lld %12lld %10.3f\n",i,optstats[i][0],optstats[i][1],optstats[i][1]/double(optstats[i][0]));
+  for(i=0;i<=int(hiddenwords.size());i++)if(optstats[i][0])fprintf(fp,"%4d   %12lld %12lld %10.3f\n",i,optstats[i][0],optstats[i][1],optstats[i][1]/double(optstats[i][0]));
   fclose(fp);
 }
 
-void writewordlist(array2d<UC>&wl,string fn){
+void writewordlist(vector<string>&wl,string fn){
   if(!outdir)return;
   string path=outdir+("/"+fn);
   FILE*fp=fopen(path.c_str(),"w");assert(fp);
-  int i;
-  for(i=0;i<int(wl.rows);i++){
-    fprintf(fp,"%s\n",decword(wl[i]).c_str());
-  }
+  for(string &w:wl)fprintf(fp,"%s\n",w.c_str());
   fclose(fp);
 }
 
@@ -244,7 +230,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
   if(depth<=prl){
     prs(depth*4);
     printf("E%d %4d",depth,nh);
-    for(i=0;i<min(nh,5);i++)printf(" %s",decword(testwords[hwsubset[i]]).c_str());
+    for(i=0;i<min(nh,5);i++)printf(" %s",testwords[hwsubset[i]].c_str());
     if(i<nh)printf(" ...\n"); else printf("\n");
   }
   if(rbest)*rbest=-1;
@@ -259,25 +245,24 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
   entrystats[depth][2]++;
   tick(0);tock(0);// calibration
   
-  int nt=testwords.rows;
+  int nt=testwords.size();
   int thr;
   vector<uint64> s2a(nt);
   if(depth==0&&(toplist||topword)){
     int start=0,step=1;
-    array2d<UC> fwl;
+    vector<string> fwl;
     if(toplist){
       vector<string> tlf=split(toplist,",");
       fwl=load(tlf[0].c_str());
       if(tlf.size()>=2)start=std::stoi(tlf[1]);
       if(tlf.size()>=3)step=std::stoi(tlf[2]);
     }else{
-      fwl.resize(1,5);
-      for(int j=0;j<5;j++)fwl[0][j]=tolower(topword[j])-'a';
+      fwl.push_back(topword);
     }
     int r=0;
-    for(j=start;j>=0&&j<int(fwl.rows);j+=step){
+    for(j=start;j>=0&&j<int(fwl.size());j+=step){
       for(t=0;t<nt;t++){
-        if(!memcmp(fwl[j],testwords[t],5))s2a[r++]=uint64(j)<<32|t;
+        if(fwl[j]==testwords[t])s2a[r++]=uint64(j)<<32|t;
       }
     }
     nt=r;
@@ -345,7 +330,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
       s=sc[t][h];
       equiv[s].push_back(h);
     }
-    if(depth<=prl){prs(depth*4);printf("M%d %s %8.2f %d/%d %d %d\n",depth,decword(testwords[t]).c_str(),cpu(),i,min(thr,nt),clip,mi);}
+    if(depth<=prl){prs(depth*4);printf("M%d %s %8.2f %d/%d %d %d\n",depth,testwords[t].c_str(),cpu(),i,min(thr,nt),clip,mi);}
     tock(2);
     int64 tot=0;
     int ind[243],lb[243];
@@ -409,7 +394,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
       tottot+=tot;
       double cpu2=cpu();
       printf("First guess %s %s= %lld  heuristic = %7d    dCPU = %9.2f   CPU = %9.2f\n",
-             decword(testwords[t]).c_str(),tot<clip||tot==infinity?" ":">",tot,val,cpu2-cpu1,cpu2-cpu0);
+             testwords[t].c_str(),tot<clip||tot==infinity?" ":">",tot,val,cpu2-cpu1,cpu2-cpu0);
       cpu1=cpu2;
       fflush(stdout);
     }
@@ -428,11 +413,11 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
         nextcheckpoint+=checkpointinterval;
       }
     }
-    if(depth<=prl){prs(depth*4);printf("N%d %s %8.2f %d/%d %d %d : %lld\n",depth,decword(testwords[t]).c_str(),cpu(),i,min(thr,nt),clip,mi,tot);}
+    if(depth<=prl){prs(depth*4);printf("N%d %s %8.2f %d/%d %d %d : %lld\n",depth,testwords[t].c_str(),cpu(),i,min(thr,nt),clip,mi,tot);}
     if(depthonly&&!(depth==0&&showtop)&&mi<infinity/2)break;
     //if(!(depth==0&&showtop)&&mi<=lbound)break;
   }
-  if(depth==0&&!rbest)printf("Best first guess = %s\n",best>=0?decword(testwords[best]).c_str():"no-legal-guess");
+  if(depth==0&&!rbest)printf("Best first guess = %s\n",best>=0?testwords[best].c_str():"no-legal-guess");
   if(mi>=infinity/2){mi=infinity;exact=1;}
   if(exact){optstats[nh][0]++;optstats[nh][1]+=mi;}
   if(!(depth==0&&(toplist||topword))){
@@ -458,7 +443,7 @@ int printtree(vector<int>&hwsubset,int depth,FILE*tfp){
     fprintf(tfp,"IMPOSSIBLE\n");
     return o;
   }
-  fprintf(tfp,"%s ",decword(testwords[best]).c_str());
+  fprintf(tfp,"%s ",testwords[best].c_str());
   
   vector<int> equiv[243];
   for(j=0;j<nh;j++){
@@ -515,13 +500,13 @@ int main(int ac,char**av){
   if(mode==0){hiddenwords=load("wordlist_hidden");testwords=load("wordlist_all");}
   if(mode==1){hiddenwords=load("wordlist_hidden");testwords=hiddenwords;}
   if(mode==2){hiddenwords=load("wordlist_all");testwords=hiddenwords;}
-  optstats.resize(hiddenwords.rows+1,2);
+  optstats.resize(hiddenwords.size()+1,2);
   if(outdir)mkdir(outdir,0777);
   writewordlist(hiddenwords,"hiddenwords");
   writewordlist(testwords,"testwords");
   if(loadcache)loadcachefromdir(loadcache);
   
-  int i,j,nt=testwords.rows,nh=hiddenwords.rows;
+  int i,j,nt=testwords.size(),nh=hiddenwords.size();
   sc.resize(nt,nh);
   for(i=0;i<nt;i++)for(j=0;j<nh;j++)sc[i][j]=score(testwords[i],hiddenwords[j]);
   vector<int> allhidden(nh);
