@@ -41,9 +41,6 @@ int minlboundcacheremdepth=3;
 typedef vector<int> list;
 typedef pair<list,list> list2;
 
-// mode=0 ==> hidden word from  2315 list, test words from 12972 list (default)
-// mode=1 ==> hidden word from  2315 list, test words from  2315 list
-// mode=2 ==> hidden word from 12972 list, test words from 12972 list
 int maxg=0,n0=0,n1=0,nth=1,n0th=-1;
 int maxguesses=6;
 int64 cachestats[MAXDEPTH+1]={0},cachemiss[MAXDEPTH+1]={0},entrystats[MAXDEPTH+1][5]={0};
@@ -51,6 +48,7 @@ array2d<int64> optstats;
 map<list2,int> opt[MAXDEPTH+1],lbound[MAXDEPTH+1];
 array2d<UC> sc;
 vector<string> testwords,hiddenwords;
+list alltest,allhidden;
 const char*toplist=0,*topword=0;
 int64 totentries=0,nextmemcheck=0,memcheckinterval=100000;
 double cachememlimit=0.5;// Approximate total memory limit for opt and lbound caches in GB
@@ -238,7 +236,7 @@ void prwordlist(list&wl){
   printf("\n");
 }
 
-void inithardmodecheck(){
+void inithardmodebitvectors(){
   int a,g,i,j,p,s,nt=testwords.size();;
   multiset64.resize(nt,32);
   testwords25bit.resize(nt);
@@ -558,6 +556,32 @@ int printtree(list oktestwords,list&hwsubset,int depth,FILE*tfp){
   return o;
 }
 
+void initstuff(int mode,const char*loadcache){
+  // mode=0 ==> hidden word from  2315 list, test words from 12972 list (default)
+  // mode=1 ==> hidden word from  2315 list, test words from  2315 list
+  // mode=2 ==> hidden word from 12972 list, test words from 12972 list
+  if(mode==0){hiddenwords=load("wordlist_hidden");testwords=load("wordlist_all");}
+  if(mode==1){hiddenwords=load("wordlist_hidden");testwords=hiddenwords;}
+  if(mode==2){hiddenwords=load("wordlist_all");testwords=hiddenwords;}
+  optstats.resize(hiddenwords.size()+1,2);
+  if(outdir)mkdir(outdir,0777);
+  writewordlist(hiddenwords,"hiddenwords");
+  writewordlist(testwords,"testwords");
+  if(loadcache)loadcachefromdir(loadcache);
+  int i,j,nt=testwords.size(),nh=hiddenwords.size();
+  sc.resize(nt,nh);
+  for(i=0;i<nt;i++)for(j=0;j<nh;j++)sc[i][j]=score(testwords[i],hiddenwords[j]);
+  inithardmodebitvectors();
+  alltest.resize(nt);
+  for(j=0;j<nt;j++)alltest[j]=j;
+  allhidden.resize(nh);
+  for(j=0;j<nh;j++)allhidden[j]=j;
+  maxguesses=min(maxguesses,MAXDEPTH);
+  for(i=0;i<243;i++)humanorder[i]=i;
+  auto cmp=[](const int&i0,const int&i1)->bool{return decscore(i0)<decscore(i1);};
+  std::sort(humanorder,humanorder+243,cmp);
+}
+
 int main(int ac,char**av){
   printf("Commit %s\n",COMMITDESC);
   int beta=infinity,mode=0;
@@ -586,28 +610,8 @@ int main(int ac,char**av){
   }
  ew0:;
 
-  if(mode==0){hiddenwords=load("wordlist_hidden");testwords=load("wordlist_all");}
-  if(mode==1){hiddenwords=load("wordlist_hidden");testwords=hiddenwords;}
-  if(mode==2){hiddenwords=load("wordlist_all");testwords=hiddenwords;}
-  optstats.resize(hiddenwords.size()+1,2);
-  if(outdir)mkdir(outdir,0777);
-  writewordlist(hiddenwords,"hiddenwords");
-  writewordlist(testwords,"testwords");
-  if(loadcache)loadcachefromdir(loadcache);
-  for(int i=0;i<int(hiddenwords.size());i++)assert(testwords[i]==hiddenwords[i]);
+  initstuff(mode,loadcache);
   
-  int i,j,nt=testwords.size(),nh=hiddenwords.size();
-  sc.resize(nt,nh);
-  for(i=0;i<nt;i++)for(j=0;j<nh;j++)sc[i][j]=score(testwords[i],testwords[j]);
-  inithardmodecheck();
-  list allhidden(nh),alltest(nt);
-  for(j=0;j<nh;j++)allhidden[j]=j;
-  for(j=0;j<nt;j++)alltest[j]=j;
-  maxguesses=min(maxguesses,MAXDEPTH);
-  for(i=0;i<243;i++)humanorder[i]=i;
-  auto cmp=[](const int&i0,const int&i1)->bool{return decscore(i0)<decscore(i1);};
-  std::sort(humanorder,humanorder+243,cmp);
-
   printf("nth = %d\n",nth);
   printf("n0th = %d\n",n0th);
   printf("mode = %d\n",mode);
@@ -622,7 +626,7 @@ int main(int ac,char**av){
   printf("min{opt,lbound}cacheremdepths = %d %d\n",minoptcacheremdepth,minlboundcacheremdepth);
   fflush(stdout);
   double cpu0=cpu();
-  int o;
+  int i,o;
   if(treefn){
     FILE*tfp=fopen(treefn,"w");assert(tfp);
     o=printtree(alltest,allhidden,0,tfp);
@@ -632,7 +636,7 @@ int main(int ac,char**av){
     o=optimise(alltest,allhidden,0,beta);
   }
   printf("Best first guess score %s= %d\n",depthonly&&o<infinity?"<":"",o);
-  printf("Average guesses reqd using best first guess = %.4f\n",o/double(nh));
+  printf("Average guesses reqd using best first guess = %.4f\n",o/double(hiddenwords.size()));
   double cpu1=cpu()-cpu0;
   printf("Time taken = %.2fs\n",cpu1);
   for(i=0;i<=maxguesses;i++)if(cachestats[i]||entrystats[i][0])printf("Depth %2d: Entries = %12lld %12lld %12lld    Cache writes reads misses = %12lu %12lld %12lld\n",i,entrystats[i][0],entrystats[i][1],entrystats[i][2],opt[i].size(),cachestats[i],cachemiss[i]);
