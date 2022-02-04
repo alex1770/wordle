@@ -536,10 +536,15 @@ int main(int ac,char**av){
     case 'x': outdir=strdup(optarg);break;
     case 'z': prl=atoi(optarg);break;
     case -1: goto ew0;
-    default: fprintf(stderr,"Options: a=wordlist_all_name, b=beta, d enables depth-only mode, h=wordlist_hidden_name, n=nth, N=nth at top level, g=max guesses, p=print tree filename, s enables showtop, t=toplist filename[,start[,step]], w=topword, T enables timings, x=outdir\n");exit(1);
+    default: goto err0;
   }
  ew0:;
-
+  if(optind<ac){
+  err0:
+    fprintf(stderr,"Options: a=wordlist_all_name, b=beta, d enables depth-only mode, h=wordlist_hidden_name, n=nth, N=nth at top level, g=max guesses, p=print tree filename, s enables showtop, t=toplist filename[,start[,step]], w=topword, T enables timings, x=outdir\n");
+    exit(1);
+  }
+  
   initstuff(loadcache);
   
   printf("nth = %d\n",nth);

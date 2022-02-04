@@ -605,7 +605,7 @@ int main(int ac,char**av){
   printf("Commit %s\n",COMMITDESC);
   int beta=infinity;
   const char*treefn=0,*loadcache=0;
-  
+
   while(1)switch(getopt(ac,av,"a:b:dh:r:R:n:N:g:l:p:st:M:Tw:x:z:")){
     case 'a': wordlist_all_name=strdup(optarg);break;
     case 'b': beta=atoi(optarg);break;
@@ -626,9 +626,14 @@ int main(int ac,char**av){
     case 'x': outdir=strdup(optarg);break;
     case 'z': prl=atoi(optarg);break;
     case -1: goto ew0;
-    default: fprintf(stderr,"Options: a=wordlist_all_name, b=beta, d enables depth-only mode, h=wordlist_hidden_name, n=nth, N=nth at top level, g=max guesses, p=print tree filename, s enables showtop, t=toplist filename[,start[,step]], w=topword, T enables timings, x=outdir\n");exit(1);
+    default: goto err0;
   }
  ew0:;
+  if(optind<ac){
+  err0:
+    fprintf(stderr,"Options: a=wordlist_all_name, b=beta, d enables depth-only mode, h=wordlist_hidden_name, n=nth, N=nth at top level, g=max guesses, p=print tree filename, s enables showtop, t=toplist filename[,start[,step]], w=topword, T enables timings, x=outdir\n");
+    exit(1);
+  }
 
   initstuff(loadcache);
   
