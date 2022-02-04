@@ -31,7 +31,7 @@ template<class T> struct array2d {
 };
 const int infinity=1000000000;
 const char*outdir=0;
-int showtop=0,s2mult=10;
+int showtop=0,s2mult=2;
 int minoptcacheremdepth=2;
 int minlboundcacheremdepth=4;
 #define MAXDEPTH 100
@@ -298,13 +298,14 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
     tick(1);
     for(t=0;t<nt;t++){
       memset(count,0,sizeof(count));
-      int s2=0,t2=243;
+      int s2=0,t2=244;
       for(j=0;j<nh;j++){
         int &c=count[sc[t][hwsubset[j]]];
         s2+=2*c+1;
         t2-=(c==0);
         c++;
       }
+      t2-=count[242];
       // Check for 2nd perfect test word, which means we don't need to consider the rest
       if(depth>0&&count[242]==0&&s2==nh){
         writeoptcache(depth,hwsubset,2*nh);
@@ -320,7 +321,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
       return infinity;
     }
     if(depth==0&&n0th>0)thr=n0th; else thr=nth;
-    if(depth<=2)std::sort(s2a.begin(),s2a.end()); else if(thr-1<nt)std::nth_element(&s2a[0],&s2a[thr-1],&s2a[nt]);
+    if(depthonly||depth<=2)std::sort(s2a.begin(),s2a.end()); else if(thr-1<nt)std::nth_element(&s2a[0],&s2a[thr-1],&s2a[nt]);
   }
 
   int mi=beta,best=-1,exact=0;
