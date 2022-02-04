@@ -422,7 +422,7 @@ int optimise_inner(list&oktestwords,list&hwsubset,int depth,int beta=infinity,in
       s=sc[t][h];
       equiv[s].push_back(h);
     }
-    if(depth<=prl){prs(depth*4);printf("M%d %s %8.2f %d/%d %d %d\n",depth,testwords[t].c_str(),cpu(),i,min(thr,nt),clip,mi);}
+    if(depth<=prl){prs(depth*4);printf("M%d %s %8.2f %d/%d %d %d\n",depth,testwords[t].c_str(),cpu(),i,min(thr,nt),clip,mi);fflush(stdout);}
     tock(2);
     int64 tot=0;
     int ind[243],lb[243];
@@ -475,7 +475,7 @@ int optimise_inner(list&oktestwords,list&hwsubset,int depth,int beta=infinity,in
       int inc;
       assert(s<242);
       tot-=lb[s];
-      if(depth<=prl){prs(depth*4+2);printf("S%d %s %4d %8.2f %d/%d\n",depth,decscore(s).c_str(),sz,cpu(),k,n);}
+      if(depth<=prl){prs(depth*4+2);printf("S%d %s %4d %8.2f %d/%d\n",depth,decscore(s).c_str(),sz,cpu(),k,n);fflush(stdout);}
       if(filtered[s].size()==0)filtered[s]=filter(oktestwords,t,s);
       inc=sz+optimise(filtered[s],equiv[s],depth+1,clip-tot-sz);
       assert(inc>=lb[s]);
@@ -484,7 +484,7 @@ int optimise_inner(list&oktestwords,list&hwsubset,int depth,int beta=infinity,in
     tock(10+depth);
     assert(tot>=0);
     if(tot>=infinity/2)tot=infinity;
-    if(depth==0&&!rbest){
+    if(depth==0){
       double cpu2=cpu();
       printf("First guess %s %s= %lld  heuristic = %7d    dCPU = %9.2f   CPU = %9.2f\n",
              testwords[t].c_str(),tot<clip||tot==infinity?" ":">",tot,val,cpu2-cpu1,cpu2-cpu0);
@@ -506,10 +506,10 @@ int optimise_inner(list&oktestwords,list&hwsubset,int depth,int beta=infinity,in
         nextcheckpoint+=checkpointinterval;
       }
     }
-    if(depth<=prl){prs(depth*4);printf("N%d %s %8.2f %d/%d %d %d : %lld\n",depth,testwords[t].c_str(),cpu(),i,min(thr,nt),clip,mi,tot);}
+    if(depth<=prl){prs(depth*4);printf("N%d %s %8.2f %d/%d %d %d : %lld\n",depth,testwords[t].c_str(),cpu(),i,min(thr,nt),clip,mi,tot);fflush(stdout);}
     if(depthonly&&!(depth==0&&showtop)&&mi<infinity/2)break;
   }
-  if(depth==0&&!rbest)printf("Best first guess = %s\n",best>=0?testwords[best].c_str():"no-legal-guess");
+  if(depth==0)printf("Best first guess = %s\n",best>=0?testwords[best].c_str():"no-legal-guess");
   if(mi>=infinity/2){mi=infinity;exact=1;}
   if(exact){optstats[nh][0]++;optstats[nh][1]+=mi;}
   if(exact)writeoptcache(depth,oktestwords,hwsubset,mi);

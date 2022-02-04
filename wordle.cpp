@@ -240,6 +240,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
     printf("E%d %4d",depth,nh);
     for(i=0;i<min(nh,5);i++)printf(" %s",testwords[hwsubset[i]].c_str());
     if(i<nh)printf(" ...\n"); else printf("\n");
+    fflush(stdout);
   }
   if(rbest)*rbest=-1;
   if(remdepth<=0)return beta;
@@ -339,7 +340,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
       s=sc[t][h];
       equiv[s].push_back(h);
     }
-    if(depth<=prl){prs(depth*4);printf("M%d %s %8.2f %d/%d %d %d\n",depth,testwords[t].c_str(),cpu(),i,min(thr,nt),clip,mi);}
+    if(depth<=prl){prs(depth*4);printf("M%d %s %8.2f %d/%d %d %d\n",depth,testwords[t].c_str(),cpu(),i,min(thr,nt),clip,mi);fflush(stdout);}
     tock(2);
     int64 tot=0;
     int ind[243],lb[243];
@@ -391,7 +392,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
       int inc;
       assert(s<242);
       tot-=lb[s];
-      if(depth<=prl){prs(depth*4+2);printf("S%d %s %4d %8.2f %d/%d\n",depth,decscore(s).c_str(),sz,cpu(),k,n);}
+      if(depth<=prl){prs(depth*4+2);printf("S%d %s %4d %8.2f %d/%d\n",depth,decscore(s).c_str(),sz,cpu(),k,n);fflush(stdout);}
       inc=sz+optimise(equiv[s],depth+1,clip-tot-sz);
       assert(inc>=lb[s]);
       tot+=inc;
@@ -399,7 +400,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
     tock(10+depth);
     assert(tot>=0);
     if(tot>=infinity/2)tot=infinity;
-    if(depth==0&&!rbest){
+    if(depth==0){
       tottot+=tot;
       double cpu2=cpu();
       printf("First guess %s %s= %lld  heuristic = %7d    dCPU = %9.2f   CPU = %9.2f\n",
@@ -422,11 +423,11 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
         nextcheckpoint+=checkpointinterval;
       }
     }
-    if(depth<=prl){prs(depth*4);printf("N%d %s %8.2f %d/%d %d %d : %lld\n",depth,testwords[t].c_str(),cpu(),i,min(thr,nt),clip,mi,tot);}
+    if(depth<=prl){prs(depth*4);printf("N%d %s %8.2f %d/%d %d %d : %lld\n",depth,testwords[t].c_str(),cpu(),i,min(thr,nt),clip,mi,tot);fflush(stdout);}
     if(depthonly&&!(depth==0&&showtop)&&mi<infinity/2)break;
     //if(!(depth==0&&showtop)&&mi<=lbound)break;
   }
-  if(depth==0&&!rbest)printf("Best first guess = %s\n",best>=0?testwords[best].c_str():"no-legal-guess");
+  if(depth==0)printf("Best first guess = %s\n",best>=0?testwords[best].c_str():"no-legal-guess");
   if(mi>=infinity/2){mi=infinity;exact=1;}
   if(exact){optstats[nh][0]++;optstats[nh][1]+=mi;}
   if(!(depth==0&&(toplist||topword))){
