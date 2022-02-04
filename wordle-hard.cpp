@@ -457,9 +457,9 @@ int optimise_inner(list&oktestwords,list&hwsubset,int depth,int beta=infinity,in
         s=ind[k];
         int sz=equiv[s].size();
         assert(s<242);
+        filtered[s]=filter(oktestwords,t,s);
         if(lb[s]==3*sz-1){
           tot-=lb[s];
-          filtered[s]=filter(oktestwords,t,s);
           int o=optimise(filtered[s],equiv[s],depth+1,clip-tot-sz,2);
           if(o>=0){int inc=sz+o;assert(inc>=lb[s]);tot+=inc;continue;}
           lb[s]=3*sz;
