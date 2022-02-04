@@ -467,6 +467,18 @@ int printtree(vector<int>&hwsubset,int depth,FILE*tfp){
   return o;
 }
 
+// hiddenwords has to be an initial segment of testwords
+void orderwordlists(){
+  std::sort(hiddenwords.begin(),hiddenwords.end());
+  vector<string> testonly;
+  for(string&s:testwords){
+    if(!std::binary_search(hiddenwords.begin(),hiddenwords.end(),s))testonly.push_back(s);
+  }
+  std::sort(testonly.begin(),testonly.end());
+  testwords=hiddenwords;
+  testwords.insert(testwords.end(),testonly.begin(),testonly.end());
+}
+
 void initstuff(int mode,const char*loadcache){
   // mode=0 ==> hidden word from  2315 list, test words from 12972 list (default)
   // mode=1 ==> hidden word from  2315 list, test words from  2315 list
@@ -474,6 +486,7 @@ void initstuff(int mode,const char*loadcache){
   if(mode==0){hiddenwords=load("wordlist_hidden");testwords=load("wordlist_all");}
   if(mode==1){hiddenwords=load("wordlist_hidden");testwords=hiddenwords;}
   if(mode==2){hiddenwords=load("wordlist_all");testwords=hiddenwords;}
+  orderwordlists();
   optstats.resize(hiddenwords.size()+1,2);
   if(outdir)mkdir(outdir,0777);
   writewordlist(hiddenwords,"hiddenwords");
