@@ -50,6 +50,8 @@ double nextcheckpoint=0,checkpointinterval=3600;
 int humanorder[243];// Order the 243 scores in alphabetical order
 int depthonly=0;
 int prl=-1;
+const char*wordlist_hidden_name="wordlist_hidden";
+const char*wordlist_all_name="wordlist_all";
 
 double cpu(){return clock()/double(CLOCKS_PER_SEC);}
 int timings=0;
@@ -196,6 +198,14 @@ int readoptcache(int depth,vector<int>&hwsubset){
     }
   }
   return -1;
+}
+
+void prcachestats(){
+  int i;
+  for(i=0;i<=maxguesses;i++)if(cachestats[i]||entrystats[i][0]){
+    printf("Depth %2d: Entries = %12lld %12lld %12lld    Cache writes reads misses = %12lu %12lld %12lld\n",
+           i,entrystats[i][0],entrystats[i][1],entrystats[i][2],opt[i].size(),cachestats[i],cachemiss[i]);
+  }
 }
 
 int readlboundcache(int depth,vector<int>&hwsubset){
@@ -483,9 +493,9 @@ void initstuff(int mode,const char*loadcache){
   // mode=0 ==> hidden word from  2315 list, test words from 12972 list (default)
   // mode=1 ==> hidden word from  2315 list, test words from  2315 list
   // mode=2 ==> hidden word from 12972 list, test words from 12972 list
-  if(mode==0){hiddenwords=load("wordlist_hidden");testwords=load("wordlist_all");}
-  if(mode==1){hiddenwords=load("wordlist_hidden");testwords=hiddenwords;}
-  if(mode==2){hiddenwords=load("wordlist_all");testwords=hiddenwords;}
+  if(mode==0){hiddenwords=load(wordlist_hidden_name);testwords=load(wordlist_all_name);}
+  if(mode==1){hiddenwords=load(wordlist_hidden_name);testwords=hiddenwords;}
+  if(mode==2){hiddenwords=load(wordlist_all_name);testwords=hiddenwords;}
   orderwordlists();
   optstats.resize(hiddenwords.size()+1,2);
   if(outdir)mkdir(outdir,0777);
@@ -508,9 +518,11 @@ int main(int ac,char**av){
   int beta=infinity,mode=0;
   const char*treefn=0,*loadcache=0;
   
-  while(1)switch(getopt(ac,av,"b:dr:R:n:N:m:g:l:p:st:M:Tw:x:z:")){
+  while(1)switch(getopt(ac,av,"a:b:dh:r:R:n:N:m:g:l:p:st:M:Tw:x:z:")){
+    case 'a': wordlist_all_name=strdup(optarg);break;
     case 'b': beta=atoi(optarg);break;
     case 'd': depthonly=1;break;
+    case 'h': wordlist_hidden_name=strdup(optarg);break;
     case 'l': loadcache=strdup(optarg);break;
     case 'n': nth=atoi(optarg);break;
     case 'N': n0th=atoi(optarg);break;
@@ -527,7 +539,7 @@ int main(int ac,char**av){
     case 'x': outdir=strdup(optarg);break;
     case 'z': prl=atoi(optarg);break;
     case -1: goto ew0;
-    default: fprintf(stderr,"Options: b=beta, d enables depth-only mode, n=nth, N=nth at top level, m=mode, g=max guesses, p=print tree filename, s enables showtop, t=toplist filename[,start[,step]], w=topword, T enables timings, x=outdir\n");exit(1);
+    default: fprintf(stderr,"Options: a=wordlist_all_name, b=beta, d enables depth-only mode, h=wordlist_hidden_name, n=nth, N=nth at top level, m=mode, g=max guesses, p=print tree filename, s enables showtop, t=toplist filename[,start[,step]], w=topword, T enables timings, x=outdir\n");exit(1);
   }
  ew0:;
 
@@ -543,11 +555,13 @@ int main(int ac,char**av){
   printf("top-level word = %s\n",topword?topword:"(not given)");
   printf("s2mult = %d\n",s2mult);
   printf("depthonly = %d\n",depthonly);
-  printf("tree filename = \"%s\"\n",treefn?treefn:"(not given)");
+  printf("Test wordlist filename = %s, size = %lu\n",wordlist_all_name,testwords.size());
+  printf("Hidden wordlist filename = %s, size = %lu\n",wordlist_hidden_name,hiddenwords.size());
+  printf("tree filename = %s\n",treefn?treefn:"(not given)");
   printf("min{opt,lbound}cacheremdepths = %d %d\n",minoptcacheremdepth,minlboundcacheremdepth);
   fflush(stdout);
   double cpu0=cpu();
-  int i,o;
+  int o;
   if(treefn){
     FILE*tfp=fopen(treefn,"w");assert(tfp);
     o=printtree(allhidden,0,tfp);
@@ -561,7 +575,7 @@ int main(int ac,char**av){
   if(showtop)printf("Total first guesses = %lld\n",tottot);
   double cpu1=cpu()-cpu0;
   printf("Time taken = %.2fs\n",cpu1);
-  for(i=0;i<=maxguesses;i++)if(cachestats[i]||entrystats[i][0])printf("Depth %2d: Entries = %12lld %12lld %12lld    Cache writes reads misses = %12lu %12lld %12lld\n",i,entrystats[i][0],entrystats[i][1],entrystats[i][2],opt[i].size(),cachestats[i],cachemiss[i]);
+  prcachestats();
   //printf("Rates per second:\n");
   //for(i=0;i<=maxguesses;i++)if(cachestats[i]||entrystats[i][0])printf("Depth %2d: Entries = %12g %12g %12g    Cache writes reads misses = %12g %12g %12g\n",i,entrystats[i][0]/cpu1,entrystats[i][1]/cpu1,entrystats[i][2]/cpu1,opt[i].size()/cpu1,cachestats[i]/cpu1,cachemiss[i]/cpu1);
   writeoptstats();
