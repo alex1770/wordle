@@ -380,7 +380,7 @@ int optimise_inner(vector<int>&hwsubset,int depth,int beta=infinity,int fast=0,i
     }
     tock(4);
     if(tot<clip){
-      // '>' appears to work better at finding new best testwords, '<' at disproving bad testwords when there is a decent beta bound
+      // The '<' sort order makes it faster at finding "disproofs" (beta cutoffs) even though larger equivalence classes are more likely to be worse (they are more likely to cutoff)
       auto cmp=[&equiv](const int&s0,const int&s1)->bool{return equiv[s0].size()<equiv[s1].size();};
       std::sort(ind,ind+n,cmp);
     }

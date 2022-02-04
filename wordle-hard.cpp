@@ -314,6 +314,13 @@ int optimise_inner(list&oktestwords,list&hwsubset,int depth,int beta=infinity,in
   assert(depth<MAXDEPTH);
   totentries++;
   entrystats[depth][0]++;
+  if(depth<=prl){
+    prs(depth*4);
+    printf("E%d %4d",depth,nh);
+    for(i=0;i<min(nh,200);i++)printf(" %s",testwords[hwsubset[i]].c_str());
+    if(i<nh)printf(" ...\n"); else printf("\n");
+    fflush(stdout);
+  }
   if(rbest)*rbest=-1;
   if(remdepth<=0)return beta;
   if(depth>0&&2*nh-1>=beta)return beta;
@@ -463,7 +470,7 @@ int optimise_inner(list&oktestwords,list&hwsubset,int depth,int beta=infinity,in
       }
       n=m;
       tock(4);
-      // '>' appears to work better at finding new best testwords, '<' at disproving bad testwords when there is a decent beta bound
+      // The '<' sort order makes it faster at finding "disproofs" (beta cutoffs) even though larger equivalence classes are more likely to be worse (they are more likely to cutoff)
       auto cmp=[&equiv](const int&s0,const int&s1)->bool{return equiv[s0].size()<equiv[s1].size();};
       std::sort(ind,ind+n,cmp);
     }
