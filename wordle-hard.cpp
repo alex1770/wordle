@@ -578,13 +578,9 @@ void orderwordlists(){
   testwords.insert(testwords.end(),testonly.begin(),testonly.end());
 }
 
-void initstuff(int mode,const char*loadcache){
-  // mode=0 ==> hidden word from  2315 list, test words from 12972 list (default)
-  // mode=1 ==> hidden word from  2315 list, test words from  2315 list
-  // mode=2 ==> hidden word from 12972 list, test words from 12972 list
-  if(mode==0){hiddenwords=load(wordlist_hidden_name);testwords=load(wordlist_all_name);}
-  if(mode==1){hiddenwords=load(wordlist_hidden_name);testwords=hiddenwords;}
-  if(mode==2){hiddenwords=load(wordlist_all_name);testwords=hiddenwords;}
+void initstuff(const char*loadcache){
+  hiddenwords=load(wordlist_hidden_name);
+  testwords=load(wordlist_all_name);
   orderwordlists();
   optstats.resize(hiddenwords.size()+1,2);
   if(outdir)mkdir(outdir,0777);
@@ -607,10 +603,10 @@ void initstuff(int mode,const char*loadcache){
 
 int main(int ac,char**av){
   printf("Commit %s\n",COMMITDESC);
-  int beta=infinity,mode=0;
+  int beta=infinity;
   const char*treefn=0,*loadcache=0;
   
-  while(1)switch(getopt(ac,av,"a:b:dh:r:R:n:N:m:g:l:p:st:M:Tw:x:z:")){
+  while(1)switch(getopt(ac,av,"a:b:dh:r:R:n:N:g:l:p:st:M:Tw:x:z:")){
     case 'a': wordlist_all_name=strdup(optarg);break;
     case 'b': beta=atoi(optarg);break;
     case 'd': depthonly=1;break;
@@ -618,7 +614,6 @@ int main(int ac,char**av){
     case 'l': loadcache=strdup(optarg);break;
     case 'n': nth=atoi(optarg);break;
     case 'N': n0th=atoi(optarg);break;
-    case 'm': mode=atoi(optarg);break;
     case 'M': s2mult=atoi(optarg);break;
     case 'g': maxguesses=atoi(optarg);break;
     case 'p': treefn=strdup(optarg);break;
@@ -631,15 +626,14 @@ int main(int ac,char**av){
     case 'x': outdir=strdup(optarg);break;
     case 'z': prl=atoi(optarg);break;
     case -1: goto ew0;
-    default: fprintf(stderr,"Options: a=wordlist_all_name, b=beta, d enables depth-only mode, h=wordlist_hidden_name, n=nth, N=nth at top level, m=mode, g=max guesses, p=print tree filename, s enables showtop, t=toplist filename[,start[,step]], w=topword, T enables timings, x=outdir\n");exit(1);
+    default: fprintf(stderr,"Options: a=wordlist_all_name, b=beta, d enables depth-only mode, h=wordlist_hidden_name, n=nth, N=nth at top level, g=max guesses, p=print tree filename, s enables showtop, t=toplist filename[,start[,step]], w=topword, T enables timings, x=outdir\n");exit(1);
   }
  ew0:;
 
-  initstuff(mode,loadcache);
+  initstuff(loadcache);
   
   printf("nth = %d\n",nth);
   printf("n0th = %d\n",n0th);
-  printf("mode = %d\n",mode);
   printf("maxguesses = %d\n",maxguesses);
   printf("beta = %d\n",beta);
   printf("showtop = %d\n",showtop);
