@@ -1,5 +1,5 @@
-all:: wordle wordle-hard
-deb:: wordle wordle-hard
+all:: wordle
+deb:: wordle
 
 COMMITDESC:= "\"$(shell git log -1 --pretty=format:'%h %ad' --date=iso --abbrev=12)\""
 
@@ -21,5 +21,6 @@ endif
 wordle: wordle.cpp Makefile gitdescription
 	g++ -o wordle wordle.cpp $(CFLAGS)
 
-wordle-hard: wordle-hard.cpp Makefile gitdescription
-	g++ -o wordle-hard wordle-hard.cpp $(CFLAGS)
+twowords: twowords.cpp Makefile gitdescription
+	g++ -o twowords twowords.cpp $(CFLAGS)
+
