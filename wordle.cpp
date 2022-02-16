@@ -66,7 +66,7 @@ const char*wordlist_hidden_name="wordlist_hidden";
 const char*wordlist_all_name="wordlist_all";
 vector<vector<int>> wordnum2endgame;
 int numendgames;
-unsigned int minendgamecount=2;
+unsigned int minendgamecount=4;
 int hardmode=0;
 int exhaust=0;// With exhaustive search certain kinds of reasoning become valid, so we want to keep a note of whether we're exhausting or not.
 struct state {
@@ -258,6 +258,7 @@ void writeoptcache(int depth,list&oktestwords,list&hwsubset,int v){
 }
 
 void writelboundcache(int depth,list&oktestwords,list&hwsubset,int v){
+  if(v>=infinity/2){writeoptcache(depth,oktestwords,hwsubset,infinity);return;}
   if(maxguesses-depth>=minlboundcacheremdepth){
     list2 key=list2(hardmode?oktestwords:emptylist,hwsubset);
     map<list2,int>::iterator it;
@@ -343,19 +344,19 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
     equiv[s].push_back(h);
   }
   tock(2);
-  //beta=min(beta,infinity/2);
+  int betac=min(beta,infinity/2);
   
   int tot=0;
-  if(0>=beta)return beta;
+  if(0>=betac)return beta;
   
   int ind[243],lb[243]={0};
   // First loop over the partition finding out very fast (fast=1) information if available
   tick(3);
   for(n=s=0;s<243;s++){
-    if(tot>=beta)return beta;
+    if(tot>=betac)return beta;
     int sz=equiv[s].size();
     if(sz){
-      if(s==242){tot+=1;continue;}
+      if(s==242){lb[s]=1;tot+=1;continue;}
       // Don't need to filter here because oktestwords isn't used in fastmode 1
       int o=minoverwords(oktestwords,equiv[s],depth+1,0,beta-tot-sz,1);
       if(o>=0){lb[s]=sz+o;tot+=lb[s];continue;}
@@ -364,7 +365,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
       ind[n++]=s;
     }
   }
-  if(tot>=beta)return beta;
+  if(tot>=betac)return beta;
   tock(3);
   
   // Then loop over the partition finding out medium fast (fast=2) information if available
@@ -372,7 +373,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
 
   tick(4);
   for(k=m=0;k<n;k++){
-    if(tot>=beta)return beta;
+    if(tot>=betac)return beta;
     s=ind[k];
     int sz=equiv[s].size();
     assert(s<242);
@@ -381,14 +382,14 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
     if(lb[s]==3*sz-1){
       tot-=lb[s];
       int o=minoverwords(filtered[s],equiv[s],depth+1,0,beta-tot-sz,2);
-      if(o>=0){int inc=sz+o;assert(inc>=lb[s]);lb[s]=inc;tot+=inc;continue;}
+      if(o>=0){int inc=sz+o;assert(depthonly||inc>=lb[s]);lb[s]=inc;tot+=inc;continue;}
       lb[s]=3*sz;
       {int v=readlboundcache(depth+1,filtered[s],equiv[s]);if(v>=0)lb[s]=max(lb[s],sz+v);}
       tot+=lb[s];
     }
     ind[m++]=s;
   }
-  if(tot>=beta)return beta;
+  if(tot>=betac)return beta;
   n=m;
   
   tock(4);
@@ -421,10 +422,10 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
     //if(filtered[s].size()==0)filtered[s]=filter(oktestwords,testword,s);
     if(depth<=prl){cpu1=cpu();prs(depth*4+2);printf("S%d %s %5lu %5d %8.2f %d/%d\n",depth,decscore(s).c_str(),filtered[s].size(),sz,cpu(),k,n);fflush(stdout);}
     inc=sz+minoverwords(filtered[s],equiv[s],depth+1,0,beta-tot-sz);
-    assert(inc>=lb[s]);
+    assert(depthonly||inc>=lb[s]);
     lb[s]=inc;
     tot+=inc;
-    if(tot>=beta){
+    if(tot>=betac){
       if(depth<=prl){
         double cpu2=cpu();
         prs(depth*4+2);
@@ -454,7 +455,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
             u.insert(u.end(),equiv[s+mm[i]].begin(),equiv[s+mm[i]].end());
             u.insert(u.end(),equiv[s+2*mm[i]].begin(),equiv[s+2*mm[i]].end());
             std::sort(u.begin(),u.end());
-            writelboundcache(depth+1,filtered[s],u,infinity);
+            writeoptcache(depth+1,filtered[s],u,infinity);
           }
           for(i=0;i<4;i++)if((s/mm[i])%3==0)for(j=i+1;j<5;j++)if((s/mm[j])%3==0){
             int a,b,t=0;
@@ -466,7 +467,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
                 u.insert(u.end(),e.begin(),e.end());
               }
               std::sort(u.begin(),u.end());
-              writelboundcache(depth+1,filtered[s],u,infinity);
+              writeoptcache(depth+1,filtered[s],u,infinity);
             }
           }
         }
@@ -483,7 +484,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
             u.insert(u.end(),equiv[s0+2*mm[i]].begin(),equiv[s0+2*mm[i]].end());
             std::sort(u.begin(),u.end());
             int v=0;
-            for(a=0;a<3;a++)v+=lb[s0+mm[i]*a]-equiv[s0+mm[i]*a].size();
+            for(a=0;a<3;a++)v=min(v+lb[s0+mm[i]*a]-int(equiv[s0+mm[i]*a].size()),infinity);
             assert(v>=0);
             writelboundcache(depth+1,u,u,v);
           }
