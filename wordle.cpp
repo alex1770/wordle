@@ -64,7 +64,7 @@ int depthonly=0;
 int prl=-1;
 const char*wordlist_hidden_name="wordlist_hidden";
 const char*wordlist_all_name="wordlist_all";
-vector<vector<int>> wordnum2endgame;
+vector<list> wordnum2endgame;
 int numendgames;
 unsigned int minendgamecount=4;
 int hardmode=0;
@@ -501,31 +501,38 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
 }
 
 int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int depth,int toplevel,int alpha=0,int beta=infinity,int *rbest=0){
-  int nh=hwsubset.size(),remdepth=maxguesses-depth;
+  int nh=hwsubset.size(),nt=oktestwords.size(),remdepth=maxguesses-depth;
   vector<UC> endcount(numendgames);
-  int e,i,biggestendgame=-1,mx=0;
- 
+  int e,biggestendgame=-1,mx=0;
+
+  if(rbest)*rbest=-1;
   for(int h:hwsubset)for(int e:wordnum2endgame[h])endcount[e]++;
   for(e=0;e<numendgames;e++)if(endcount[e]>mx){mx=endcount[e];biggestendgame=e;}
   if(depth<=prl){prs(depth*4);printf("Biggest endgame = %d %d\n",biggestendgame,mx);}
-  // We're counting the number of letter positions for which there is only one letter in the test word set.
-  // These "fixed" locations haven't necessarily been marked as green, but it doesn't make any difference.
-  // The player has to choose this letter in this position and the hiddden set must also have the same fixed letter.
-  // By the rules of scoring the letters in this position from testword and hiddenword get cancelled out before they are used for anything else.
-  // So such "fixed" positions can't give any information that distinguishes between endgame words.
-  // (This is also true if that position is the pivot position for the endgame, since then there is only at most one endgame word.)
-  char fixed[5]={1,1,1,1,1};
-  for(int t:oktestwords){
-    string &s=testwords[t];
-    for(i=0;i<5;i++){
-      if(fixed[i]==1)fixed[i]=s[i]; else if(s[i]!=fixed[i])fixed[i]=0;
+
+  if(biggestendgame>=0&&nt>=remdepth-1&&remdepth>=1&&mx-1>remdepth-1){
+    int sum=0;
+    tick(30+depth);
+    list liveendgame;
+    for(int h:hwsubset)for(int e:wordnum2endgame[h])if(e==biggestendgame)liveendgame.push_back(h);
+    int mult[6]={0};
+    for(int t:oktestwords){
+      UC seen[243]={0};
+      int n=0;
+      for(int h:liveendgame){
+        int s=sc[t][h];
+        n+=(seen[s]==0);seen[s]=1;
+      }
+      assert(n>=1&&n<=6);mult[n-1]++;
     }
-  }
-  int nng=0;
-  for(i=0;i<5;i++)nng+=!fixed[i];
-  if(mx>=nng*(remdepth-1)+2){
-    writeoptcache(depth,oktestwords,hwsubset,infinity);
-    return infinity;
+    int n,r=remdepth-1;
+    for(n=5;n>0&&r>0;n--){int r1=min(r,mult[n]);sum+=r1*n;r-=r1;}
+    tock(30+depth);
+    if(mx>sum+1){
+      if(depth<=prl)printf("Endgame cutoff %d %d %d %5d\n",remdepth-1,mx-1,sum,nt);
+      writeoptcache(depth,oktestwords,hwsubset,infinity);
+      return infinity;
+    } else if(depth<=prl)printf("Endgame notcut %d %d %d %5d\n",remdepth-1,mx-1,sum,nt);
   }
   
   int mi=beta,best=-1,exact=0;
@@ -798,7 +805,7 @@ void orderwordlists(){
 }
 
 void initendgames(){
-  int i,j,nh=hiddenwords.size();
+  int e,i,j,nh=hiddenwords.size();
   map<string,uint> wcount;// Map from wildcarded string, e.g. ".arks", to number of occurrences
   map<string,int> w2e;    // Map from wildcarded string, e.g. ".arks", to endgame number
   
@@ -822,9 +829,33 @@ void initendgames(){
       }
     }
   }
+
+  vector<list> endgame2wordlist(numendgames);
+  for(i=0;i<nh;i++)for(int e:wordnum2endgame[i])endgame2wordlist[e].push_back(i);
+
+  if(outdir){
+    FILE*fp=fopen((string(outdir)+"/word2endgame").c_str(),"w");assert(fp);
+    for(i=0;i<nh;i++){
+      if(wordnum2endgame[i].size()){
+        fprintf(fp,"%s",testwords[i].c_str());
+        for(int e:wordnum2endgame[i])fprintf(fp," %d",e);
+        fprintf(fp,"\n");
+      }
+    }
+    fclose(fp);
+
+    fp=fopen((string(outdir)+"/endgame2words").c_str(),"w");assert(fp);
+    for(e=0;e<numendgames;e++){
+      fprintf(fp,"%5d %2lu",e,endgame2wordlist[e].size());
+      for(int h:endgame2wordlist[e])fprintf(fp," %s",testwords[h].c_str());
+      fprintf(fp,"\n");
+    }
+    fclose(fp);
+  }
 }
 
 void initstuff(const char*loadcache){
+  printf("Initialising...");fflush(stdout);
   hiddenwords=load(wordlist_hidden_name);
   testwords=load(wordlist_all_name);
   orderwordlists();
@@ -844,6 +875,7 @@ void initstuff(const char*loadcache){
   auto cmp=[](const int&i0,const int&i1)->bool{return decscore(i0)<decscore(i1);};
   std::sort(humanorder,humanorder+243,cmp);
   initendgames();
+  printf("...done\n");
 }
 
 int main(int ac,char**av){
