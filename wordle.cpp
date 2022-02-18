@@ -11,6 +11,7 @@
 #include <map>
 #include <algorithm>
 #include <utility>
+#include <fstream>
 using std::string;
 using std::vector;
 using std::array;
@@ -62,8 +63,8 @@ uint greenmask25bit[243];
 vector<uint> testwords25bit;
 int depthonly=0;
 int prl=-1;
-const char*wordlist_hidden_name="wordlist_hidden";
-const char*wordlist_all_name="wordlist_all";
+const char*wordlist_hidden_name="wordlist_nyt_hidden";
+const char*wordlist_all_name="wordlist_nyt_all";
 vector<list> wordnum2endgame;
 int numendgames;
 unsigned int minendgamecount=4;
@@ -107,11 +108,11 @@ void prs(int n){
 }
 
 vector<string> load(const char *fn){
-  FILE *fp=fopen(fn,"r");assert(fp);
-  char l[1000];
+  std::ifstream fp(fn);
+  string l;
   vector<string> ret;
-  while(fgets(l,1000,fp)){l[5]=0;ret.push_back(l);}
-  fclose(fp);
+  while(std::getline(fp,l))ret.push_back(l);
+  fp.close();
   return ret;
 }
 
@@ -172,10 +173,20 @@ void writewordlist(list wl,string fn){
   fclose(fp);
 }
 
+// Estimate of memory requirement for a cache entry, so that the cache size can be kept below the memory limit.
+// This appears to be the rule for my C library (glibc 2.27 and 2.31), though it's obviously not guaranteed.
+// It would be better to use actual measured memory usage for the map container, but there seems to be no platform-independent way to do this.
+int keysize(list2&key){
+  int x=key.first.size(),y=key.second.size();
+  int a=(x==0?0:(x<5?2:(x+11)/8));
+  int b=(y==0?0:(y<5?2:(y+11)/8));
+  return 16*(a+b)+92;
+}
+
 void readmap(string path,map<list2,int>*ret,int maxd=MAXDEPTH){
-  FILE*fp=fopen(path.c_str(),"r");assert(fp);
-  char l[100000];
-  while(fgets(l,100000,fp)){
+  std::ifstream fp(path);
+  string l;
+  while(std::getline(fp,l)){
     vector<string> v0=split(l,":");
     int d=maxguesses-stoi(v0[0]);
     if(d<0||d>maxd||d>=MAXDEPTH)continue;
@@ -184,13 +195,14 @@ void readmap(string path,map<list2,int>*ret,int maxd=MAXDEPTH){
     vector<string> v1=split(v0[1]," "),v2=split(v0[2]," ");
     for(string &s:v1)vi1.push_back(stoi(s));
     for(string &s:v2)vi2.push_back(stoi(s));
-    ret[d][list2(vi1,vi2)]=v;
+    list2 key(vi1,vi2);
+    if(ret[d].count(key)==0){ret[d][key]=v;cachesize[d]+=keysize(key);}
   }
-  fclose(fp);
+  fp.close();
 }
 
 void loadcachefromdir(string dir){
-  printf("Loading cache from directory \"%s\"...",dir.c_str());fflush(stdout);
+  printf("\nLoading cache from directory \"%s\"...",dir.c_str());fflush(stdout);
   readmap(dir+"/exactcache",opt,maxguesses-minoptcacheremdepth);
   readmap(dir+"/lboundcache",lbound,maxguesses-minlboundcacheremdepth);
   printf("...done\n");
@@ -216,13 +228,6 @@ void writemap(map<list2,int>*m,string fn){
 void savecache(){
   writemap(opt,"exactcache");
   writemap(lbound,"lboundcache");
-}
-
-int keysize(list2&key){
-  int x=key.first.size(),y=key.second.size();
-  int a=(x==0?0:(x<5?2:(x+11)/8));
-  int b=(y==0?0:(y<5?2:(y+11)/8));
-  return 16*(a+b)+92;
 }
 
 int readoptcache(int depth,list&oktestwords,list&hwsubset){
@@ -506,10 +511,21 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
   int e,biggestendgame=-1,mx=0;
 
   if(rbest)*rbest=-1;
+
+  // Possible "endgame" cutoff. Sometimes there is an awkward subset of the current hidden word list, where four of the letters are fixed.
+  // For example co.ed where (if the full set of test words is used as the hidden word set) '.' can match any of d, k, l, n, o, p, r, s, t, v, w, x, y, z.
+  // This is reduced here to the "live" subset, L, of letters that fit the . and arise from words in the current hwsubset.
+  // A test word, T, distinguishes a letter from L if its score changes when that letter is present. It's not sufficient for that letter just to be
+  // present in T, because it might get used in a different way. For example, the test word T=grade doesn't distinguish 'd' in the above example endgame
+  // because it is bound to be coloured 'Y' due to the last letter of co.ed, whether .=d or not.
+  // Let D(T,E) be the set of letters that testword T distinguishes for endgame E.
+  // If there isn't a set of allowable test words T_1,...,T_r (subset of oktestwords) where r=remdepth-1, s.t. their union covers which covers
+  // the current live set L, or all but one of L, then we can cutoff immediately, because in that case we can never get it down to a unique
+  // element of E in r guesses.
+  // At the moment we approximate the coverage question by simply counting the largest r of |D(T,E)| for allowable T.
   for(int h:hwsubset)for(int e:wordnum2endgame[h])endcount[e]++;
   for(e=0;e<numendgames;e++)if(endcount[e]>mx){mx=endcount[e];biggestendgame=e;}
   if(depth<=prl){prs(depth*4);printf("Biggest endgame = %d %d\n",biggestendgame,mx);}
-
   if(biggestendgame>=0&&nt>=remdepth-1&&remdepth>=1&&mx-1>remdepth-1){
     int sum=0;
     tick(30+depth);
