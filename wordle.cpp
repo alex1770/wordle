@@ -340,7 +340,12 @@ list filter(list&words,int t,int s){
 
 int minoverwords(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta=infinity,int fast=0,int *rbest=0);
 
-int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int biggestendgame,int beta){
+// oktestwords = T = allowable words to guess with
+// hwsubset = H = set of possible hidden words
+// testword = word that is used as the guess
+// sumoverpartitions() partitions hwsubset into H = H_1 u H_2 u ... u H_n according to the colour scores induced by testword,
+// and returns the sum over i of { the sum over h in H_i of the number of moves required to find h given that you know the hidden word is in H_i }
+int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int biggestendgame,int toplevel,int beta){
   int i,k,m,n,s,nh=hwsubset.size();
   list equiv[243];
   tick(2);
@@ -383,15 +388,13 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
     int sz=equiv[s].size();
     assert(s<242);
     filtered[s]=filter(oktestwords,testword,s);
-    if(sz==nh&&filtered[s].size()==oktestwords.size())return beta;
-    if(lb[s]==3*sz-1){
-      tot-=lb[s];
-      int o=minoverwords(filtered[s],equiv[s],depth+1,0,beta-tot-sz,2);
-      if(o>=0){int inc=sz+o;assert(depthonly||inc>=lb[s]);lb[s]=inc;tot+=inc;continue;}
-      lb[s]=3*sz;
-      {int v=readlboundcache(depth+1,filtered[s],equiv[s]);if(v>=0)lb[s]=max(lb[s],sz+v);}
-      tot+=lb[s];
-    }
+    if(toplevel<2&&sz==nh&&filtered[s].size()==oktestwords.size())return beta;// Reversible move in the sense of Conway: if a move doesn't improve your position then treat it as illegal.
+    tot-=lb[s];
+    int o=minoverwords(filtered[s],equiv[s],depth+1,0,beta-tot-sz,2);
+    if(o>=0){int inc=sz+o;assert(depthonly||inc>=lb[s]);lb[s]=inc;tot+=inc;continue;}
+    lb[s]=3*sz;
+    {int v=readlboundcache(depth+1,filtered[s],equiv[s]);if(v>=0)lb[s]=max(lb[s],sz+v);}
+    tot+=lb[s];
     ind[m++]=s;
   }
   if(tot>=betac)return beta;
@@ -399,6 +402,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
   
   tock(4);
   // The '<' sort order makes it faster at finding "disproofs" (beta cutoffs) even though larger equivalence classes are more likely to be worse (they are more likely to cutoff)
+  // Below is an abandoned experiment in a better sort heuristic
   int score[243];
   for(i=0;i<n;i++){
     int r=0,s=ind[i];
@@ -444,9 +448,9 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
         tick(20+depth);
         if(inc>=infinity/2){
           // The reasoning here is, given an allowable set of test words T, and allowable set of hidden words H0 and H1, with H0 contained in H1, eval(T,H0) <= eval(T,H1)
-          // The useful case to apply this to is "when a new letter scores 'B', it's at least better than wasting a letter (by reusing a known non-letter)"
-          // This occurs quite a bit in long searches, where there is a long tail of useless test words (containing known non-letters) that are dominated by previous words.
-          // In hard mode, if a letter scores 'B' then there are no restrictions on it (hard mode doesn't insist on not using it later), so T is the same for H0 and H1 (as required).
+          // The useful case to apply this to is "when a new letter scores 'B', at least it's better than wasting a letter (by reusing a known non-letter)"
+          // This occurs quite a bit in long searches, where there is a long tail of useless test words containing known non-letters that are dominated by previous words.
+          // In hard mode, if a letter scores 'B' then there are no new restrictions on the test set (hard mode doesn't insist on not using it later), so T is the same for H0 and H1 (as required).
           // For example, after amort.BBBBY.tupik.YBBBB (meaning amort scores BBBBY then tupik scores YBBBB),
           // if BBBBY defeats bowat (renders it impossible: eval=infinity), then wrapt will also be defeated by BBBBY with no further calculation.
           // Proof: Let T and H be the sets of testwords and hiddenwords respectively, after amort.BBBBY.tupik.YBBBB. Note that bowat, wrapt are in T.
@@ -526,7 +530,7 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
   for(int h:hwsubset)for(int e:wordnum2endgame[h])endcount[e]++;
   for(e=0;e<numendgames;e++)if(endcount[e]>mx){mx=endcount[e];biggestendgame=e;}
   if(depth<=prl){prs(depth*4);printf("Biggest endgame = %d %d\n",biggestendgame,mx);}
-  if(biggestendgame>=0&&nt>=remdepth-1&&remdepth>=1&&mx-1>remdepth-1){
+  if(toplevel<2&&biggestendgame>=0&&nt>=remdepth-1&&remdepth>=1&&mx-1>remdepth-1){
     int sum=0;
     tick(30+depth);
     list liveendgame;
@@ -558,7 +562,7 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
   for(word=0;word<maxw;word++){
     int testword=trywordlist[word];
     if(depth<=prl){prs(depth*4);printf("M%d %s %8.2f %d/%d %d %d\n",depth,testwords[testword].c_str(),cpu(),word,maxw,beta,mi);fflush(stdout);}
-    int tot=sumoverpartitions(oktestwords,hwsubset,depth,testword,biggestendgame,beta);
+    int tot=sumoverpartitions(oktestwords,hwsubset,depth,testword,biggestendgame,toplevel,beta);
 
     if(toplevel){
       double cpu2=cpu();
@@ -611,7 +615,10 @@ int minoverwords_inner(list&oktestwords,list&hwsubset,int depth,int toplevel,int
   if(nh==2){if(rbest)*rbest=hwsubset[0];return 3;}
   entrystats[depth][1]++;
   if(fast==1)return -1;
-  if(!rbest&&toplevel<2){int v=readoptcache(depth,oktestwords,hwsubset);if(v>=0)return v;}
+  if(!rbest&&toplevel<2){
+    int v=readoptcache(depth,oktestwords,hwsubset);if(v>=0)return v;
+    v=readlboundcache(depth,oktestwords,hwsubset);if(v>=beta)return v;
+  }
   entrystats[depth][2]++;
   tick(0);tock(0);// calibration
   if(totentries>=nextcheck){
@@ -637,36 +644,37 @@ int minoverwords_inner(list&oktestwords,list&hwsubset,int depth,int toplevel,int
     }
     nextcheck+=checkinterval;
   }
-  
+
   int nt=oktestwords.size();
   int thr;
   vector<uint64> s2a(nt);
-
   int count[243];
-  tick(5);
-  // Check for perfect test word, which would mean we don't need to consider others
   int good=-1;
-  for(int t:hwsubset){
-    memset(count,0,sizeof(count));
-    int bad=0;
-    for(int h:hwsubset){
-      int c=(++count[sc[t][h]]);
-      bad+=(c>=2);
+  if(toplevel<2){
+    tick(5);
+    // Check for perfect test word, which would mean we don't need to consider others
+    for(int t:hwsubset){
+      memset(count,0,sizeof(count));
+      int bad=0;
+      for(int h:hwsubset){
+        int c=(++count[sc[t][h]]);
+        bad+=(c>=2);
+      }
+      if(bad==0){
+        writeoptcache(depth,oktestwords,hwsubset,2*nh-1);
+        if(rbest)*rbest=t;
+        return 2*nh-1;
+      }
+      if(bad==1)good=t;
     }
-    if(bad==0){
-      writeoptcache(depth,oktestwords,hwsubset,2*nh-1);
-      if(rbest)*rbest=t;
-      return 2*nh-1;
+    if(good>=0&&remdepth>=3){
+      writeoptcache(depth,oktestwords,hwsubset,2*nh);
+      if(rbest)*rbest=good;
+      return 2*nh;
     }
-    if(bad==1)good=t;
+    tock(5);
+    if(fast==2)return -1;
   }
-  if(good>=0&&remdepth>=3){
-    writeoptcache(depth,oktestwords,hwsubset,2*nh);
-    if(rbest)*rbest=good;
-    return 2*nh;
-  }
-  tock(5);
-  if(fast==2)return -1;
   
   tick(1);
   int lb1=infinity;
@@ -686,7 +694,7 @@ int minoverwords_inner(list&oktestwords,list&hwsubset,int depth,int toplevel,int
     if(lb<lb1)lb1=lb;
     if(lb==2*nh+1&&upto2)good=t;// Try this later, after eliminating the 2*nh possibilities
     // Check for a split into singletons using a word that couldn't be the answer, which means we can achieve 2*nh within remdepth 2
-    if(count[242]==0&&s2==nh){
+    if(toplevel<2&&count[242]==0&&s2==nh){
       writeoptcache(depth,oktestwords,hwsubset,2*nh);
       if(rbest)*rbest=t;
       return 2*nh;
@@ -694,19 +702,21 @@ int minoverwords_inner(list&oktestwords,list&hwsubset,int depth,int toplevel,int
     s2a[i]=int64(s2mult*s2+nh*lb)<<32|t;
   }
   tock(1);
-  
-  // Having not found a testword that splits into singletons, we must require at least 3 guesses in worst case.
-  if(remdepth<=2){
-    writeoptcache(depth,oktestwords,hwsubset,infinity);
-    return infinity;
+
+  if(toplevel<2){
+    // Having not found a testword that splits into singletons, we must require at least 3 guesses in worst case.
+    if(remdepth<=2){
+      writeoptcache(depth,oktestwords,hwsubset,infinity);
+      return infinity;
+    }
+    if(good>=0){
+      // (Can't early exit like this for higher scores than 2*nh+1, because 2*nh+1 can arise from a partition 3, 1, 1, ..., if 3 is optimal)
+      writeoptcache(depth,oktestwords,hwsubset,2*nh+1);
+      if(rbest)*rbest=good;
+      return 2*nh+1;
+    }
+    if(lb1>=beta)return beta;
   }
-  // Can't early exit like this for higher scores than 2*nh+1, because 2*nh+1 can arise from a partition 3, 1, 1, ..., if 3 is optimal
-  if(good>=0){
-    writeoptcache(depth,oktestwords,hwsubset,2*nh+1);
-    if(rbest)*rbest=good;
-    return 2*nh+1;
-  }
-  if(lb1>=beta)return beta;
   if(toplevel&&n0th>0)thr=n0th; else thr=nth;
   if(depthonly||depth<=2)std::sort(s2a.begin(),s2a.end()); else if(thr-1<nt)std::nth_element(&s2a[0],&s2a[thr-1],&s2a[nt]);
 
@@ -899,13 +909,12 @@ int main(int ac,char**av){
   int beta=infinity;
   const char*treefn=0,*loadcache=0;
 
-  while(1)switch(getopt(ac,av,"a:b:c:C:de:Hh:r:R:n:N:g:l:p:st:M:Tw:x:z:")){
+  while(1)switch(getopt(ac,av,"a:b:c:C:dHh:r:R:n:N:g:l:p:st:M:Tw:x:z:")){
     case 'a': wordlist_all_name=strdup(optarg);break;
     case 'b': beta=atoi(optarg);break;
     case 'c': cachememlimit=atof(optarg);break;
     case 'C': checkpointinterval=atof(optarg);break;
     case 'd': depthonly=1;break;
-    case 'e': minendgamecount=atoi(optarg);break;
     case 'H': hardmode=1;break;
     case 'h': wordlist_hidden_name=strdup(optarg);break;
     case 'l': loadcache=strdup(optarg);break;
@@ -928,7 +937,25 @@ int main(int ac,char**av){
  ew0:;
   if(optind<ac){
   err0:
-    fprintf(stderr,"Options: a=wordlist_all_name, b=beta, c=approx cache memory limit in GB, C=cache checkpoint interval in seconds (default=no checkpointing), d enables depth-only mode, e=minendgamecount, H enables hard mode, h=wordlist_hidden_name, n=nth, N=nth at top level, g=max guesses, p=print tree filename, r,R = things, s enables showtop, t=toplist filename[,start[,step]], w=topword, T enables timings, x=outdir\n");
+    fprintf(stderr,"Usage: wordle [options]\n");
+    fprintf(stderr,"       -a<string> filename for wordlist of allowable guesses\n");
+    fprintf(stderr,"       -b<int> beta cutoff (default infinity)\n");
+    fprintf(stderr,"       -c<float> approximate memory limit for cache in GB\n");
+    fprintf(stderr,"       -C<float> cache checkpoint interval in seconds (default=no checkpointing)\n");
+    fprintf(stderr,"       -d enables depth-only mode: only care about whether can solve within the prescribed number of guesses; don't care about average number of guesses required\n");
+    fprintf(stderr,"       -H enables hard mode rules\n");
+    fprintf(stderr,"       -h<string> filename for wordlist of possible hidden words\n");
+    fprintf(stderr,"       -n<int> number of words to try at each stage (default=infinity which means exhaustive search; setting to a finite value gives a heuristic search,\n");
+    fprintf(stderr,"                                                     which means the eventual answer will be an upper bound for the true value)\n");
+    fprintf(stderr,"       -N<int> number of words to try at the top level (default=infinity)\n");
+    fprintf(stderr,"       -g<int> maximum number of guesses, or max depth; default = 6\n");
+    fprintf(stderr,"       -p<string> filename for strategy tree output (default = no tree output)\n");
+    fprintf(stderr,"       -r<int> only use the exact cache when the remaining depth is at least this number\n");
+    fprintf(stderr,"       -R<int> only use the lower bound cache when the remaining depth is at least this number\n");
+    fprintf(stderr,"       -s enables \"show top\" mode, to make it evaluate all moves at the top level without using a beta cutoff\n");
+    fprintf(stderr,"       -w<string> start game in this state, e.g., salet.BBBYB or salet.BBBYB.drone or salet.BBBYB.drone.YBBBG\n");
+    fprintf(stderr,"       -T enables timings (will slow it down)\n");
+    fprintf(stderr,"       -x<string> output directory (for saving cache files etc)-\n");
     exit(1);
   }
 
