@@ -48,7 +48,7 @@ int64 cachewrites[MAXDEPTH+1]={0},cachereads[MAXDEPTH+1]={0},cachemiss[MAXDEPTH+
 array2d<int64> optstats;
 map<list2,int> opt[MAXDEPTH+1],lbound[MAXDEPTH+1];
 int64 cachesize[MAXDEPTH+1]={0};
-array2d<UC> sc;// wordle score array (map from testword, hiddenword -> colour score as a number in [0,243))
+array2d<UC> sc;// wordle score array (map from hiddenword, testword -> colour score as a number in [0,243))
 vector<string> testwords,hiddenwords;
 list alltest,allhidden;
 const list emptylist;
@@ -111,7 +111,7 @@ vector<string> load(const char *fn){
   std::ifstream fp(fn);
   string l;
   vector<string> ret;
-  while(std::getline(fp,l))ret.push_back(l);
+  while(std::getline(fp,l))ret.push_back(split(l)[0]);
   fp.close();
   return ret;
 }
@@ -321,6 +321,7 @@ int okhard(int i,int s,int j){
   uint64 Z=multiset64[i][greenyellowpos[s]];
   uint64 Z1=multiset64[j][31];
   // Bit twiddling to test if all entries (letter multiplicities) in Z1 are >= corresponding entries in Z
+  // See https://devblogs.microsoft.com/oldnewthing/20190301-00/?p=101076 or http://www.emulators.com/docs/Mihocka-Troeger-CGO-WISH-2010_final.pdf
   return (((~Z1&Z)|(~(Z1^Z)&(Z1-Z)))&0xaaaaaaaaaaaaaaaaULL)==0;
 }
 
@@ -350,7 +351,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
   list equiv[243];
   tick(2);
   for(int h:hwsubset){
-    s=sc[testword][h];
+    s=sc[h][testword];
     equiv[s].push_back(h);
   }
   tock(2);
@@ -518,7 +519,7 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
 
   // Possible "endgame" cutoff. Sometimes there is an awkward subset of the current hidden word list, where four of the letters are fixed.
   // For example co.ed where (if the full set of test words is used as the hidden word set) '.' can match any of d, k, l, n, o, p, r, s, t, v, w, x, y, z.
-  // This is reduced here to the "live" subset, L, of letters that fit the . and arise from words in the current hwsubset.
+  // This is reduced here to the "live" subset, L, of letters that fit the '.' and arise from words in the current hwsubset.
   // A test word, T, distinguishes a letter from L if its score changes when that letter is present. It's not sufficient for that letter just to be
   // present in T, because it might get used in a different way. For example, the test word T=grade doesn't distinguish 'd' in the above example endgame
   // because it is bound to be coloured 'Y' due to the last letter of co.ed, whether .=d or not.
@@ -529,7 +530,7 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
   // At the moment we approximate the coverage question by simply counting the largest r of |D(T,E)| for allowable T.
   for(int h:hwsubset)for(int e:wordnum2endgame[h])endcount[e]++;
   for(e=0;e<numendgames;e++)if(endcount[e]>mx){mx=endcount[e];biggestendgame=e;}
-  if(depth<=prl){prs(depth*4);printf("Biggest endgame = %d %d\n",biggestendgame,mx);}
+  if(depth<=prl){prs(depth*4);printf("Biggest endgame = %d %d %d\n",biggestendgame,mx,remdepth);}
   if(toplevel<2&&biggestendgame>=0&&nt>=remdepth-1&&remdepth>=1&&mx-1>remdepth-1){
     int sum=0;
     tick(30+depth);
@@ -540,7 +541,7 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
       UC seen[243]={0};
       int n=0;
       for(int h:liveendgame){
-        int s=sc[t][h];
+        int s=sc[h][t];
         n+=(seen[s]==0);seen[s]=1;
       }
       assert(n>=1&&n<=6);mult[n-1]++;
@@ -548,11 +549,23 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
     int n,r=remdepth-1;
     for(n=5;n>0&&r>0;n--){int r1=min(r,mult[n]);sum+=r1*n;r-=r1;}
     tock(30+depth);
-    if(mx>sum+1){
-      if(depth<=prl)printf("Endgame cutoff %d %d %d %5d\n",remdepth-1,mx-1,sum,nt);
+    if(mx-1>sum){
+      if(depth<=prl){prs(depth*4);printf("Endgame cutoff %d %d %d %5d\n",remdepth-1,mx-1,sum,nt);}
       writeoptcache(depth,oktestwords,hwsubset,infinity);
       return infinity;
-    } else if(depth<=prl)printf("Endgame notcut %d %d %d %5d\n",remdepth-1,mx-1,sum,nt);
+    }
+    if(depth<=prl){prs(depth*4);printf("Endgame notcut %d %d %d %5d\n",remdepth-1,mx-1,sum,nt);}
+    // This heuristic is a good indication of whether further endgame analysis is likely to be valuable
+    int heuristic=(remdepth-1)-(sum-(mx-1));
+    if(heuristic>0&&liveendgame.size()<hwsubset.size()){
+      int v=minoverwords(oktestwords,liveendgame,depth,0,beta,0,0);
+      if(v>=beta){
+        if(depth<=prl){prs(depth*4);printf("Subendgame cutoff %d %d %d %5d\n",remdepth-1,mx-1,sum,nt);}
+        writelboundcache(depth,oktestwords,hwsubset,v);
+        return v;
+      }
+    }
+    if(depth<=prl){prs(depth*4);printf("Subendgame notcut %d %d %d %5d\n",remdepth-1,mx-1,sum,nt);}
   }
   
   int mi=beta,best=-1,exact=0;
@@ -561,7 +574,7 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
   double cpu1=cpu0;
   for(word=0;word<maxw;word++){
     int testword=trywordlist[word];
-    if(depth<=prl){prs(depth*4);printf("M%d %s %8.2f %d/%d %d %d\n",depth,testwords[testword].c_str(),cpu(),word,maxw,beta,mi);fflush(stdout);}
+    if(depth<=prl){prs(depth*4);printf("M%d %s %12lld %8.2f %d/%d %d %d\n",depth,testwords[testword].c_str(),totentries,cpu(),word,maxw,beta,mi);fflush(stdout);}
     int tot=sumoverpartitions(oktestwords,hwsubset,depth,testword,biggestendgame,toplevel,beta);
 
     if(toplevel){
@@ -579,7 +592,7 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
       mi=tot;best=testword;
       if(toplevel<2)beta=mi;
     }
-    if(depth<=prl){prs(depth*4);printf("N%d %s %8.2f %d/%d %d %d : %d\n",depth,testwords[testword].c_str(),cpu(),word,maxw,beta,mi,tot);fflush(stdout);}
+    if(depth<=prl){prs(depth*4);printf("N%d %s %12lld %8.2f %d/%d %d %d : %d\n",depth,testwords[testword].c_str(),totentries,cpu(),word,maxw,beta,mi,tot);fflush(stdout);}
     if(toplevel<2&&mi<=alpha)break;// alpha is a guaranteed lower bound (not just a number that we don't care how much we are below), so if we cutoff here it is still valid to write mi to cache
     if(depthonly&&toplevel<2&&mi<infinity/2)break;
 
@@ -657,7 +670,7 @@ int minoverwords_inner(list&oktestwords,list&hwsubset,int depth,int toplevel,int
       memset(count,0,sizeof(count));
       int bad=0;
       for(int h:hwsubset){
-        int c=(++count[sc[t][h]]);
+        int c=(++count[sc[h][t]]);
         bad+=(c>=2);
       }
       if(bad==0){
@@ -684,7 +697,7 @@ int minoverwords_inner(list&oktestwords,list&hwsubset,int depth,int toplevel,int
     memset(count,0,sizeof(count));
     int s2=0,lb=nh,upto2=1;
     for(int h:hwsubset){
-      int &c=count[sc[t][h]];
+      int &c=count[sc[h][t]];
       c++;
       lb+=2-(c==1);// Assumes remdepth>=3
       if(c>2)upto2=0;
@@ -749,7 +762,7 @@ int toplevel_minoverwords(int beta,int*rbest,state*rstate=0){
     int s=encscore(initial[i+1]);
     oktestwords=filter(oktestwords,testword,s);
     list hwnew;
-    for(int h:hwsubset)if(sc[testword][h]==s)hwnew.push_back(h);
+    for(int h:hwsubset)if(sc[h][testword]==s)hwnew.push_back(h);
     hwsubset=hwnew;
     if(hwsubset.size()==0){fprintf(stderr,"Impossible initial scoring: %s\n",topword);exit(1);}
   }
@@ -760,7 +773,7 @@ int toplevel_minoverwords(int beta,int*rbest,state*rstate=0){
   if(rstate){rstate->depth=depth;rstate->oktestwords=oktestwords;rstate->hwsubset=hwsubset;}
   
   if(i==n&&!toplist)return minoverwords(oktestwords,hwsubset,depth,1+showtop,beta,0,rbest);
-  
+
   list trywordlist;
   if(!toplist){
     trywordlist.push_back(testword);
@@ -774,6 +787,7 @@ int toplevel_minoverwords(int beta,int*rbest,state*rstate=0){
       for(int t:oktestwords)if(fwl[j]==testwords[t])trywordlist.push_back(t);
     }
   }
+  
   return minoverwords_fixedlist(trywordlist,oktestwords,hwsubset,depth,1+showtop,0,beta,rbest);
   
 }
@@ -797,7 +811,7 @@ int printtree(list oktestwords,list&hwsubset,int depth,FILE*tfp){
   
   list equiv[243];
   for(int h:hwsubset){
-    s=sc[best][h];
+    s=sc[h][best];
     equiv[s].push_back(h);
   }
   int first=1;
@@ -889,8 +903,8 @@ void initstuff(const char*loadcache){
   if(outdir)mkdir(outdir,0777);
   if(loadcache)loadcachefromdir(loadcache);
   int i,j,nt=testwords.size(),nh=hiddenwords.size();
-  sc.resize(nt,nh);
-  for(i=0;i<nt;i++)for(j=0;j<nh;j++)sc[i][j]=score(testwords[i],hiddenwords[j]);
+  sc.resize(nh,nt);
+  for(i=0;i<nh;i++)for(j=0;j<nt;j++)sc[i][j]=score(testwords[j],hiddenwords[i]);
   inithardmodebitvectors();
   alltest.resize(nt);for(j=0;j<nt;j++)alltest[j]=j;
   allhidden.resize(nh);for(j=0;j<nh;j++)allhidden[j]=j;
