@@ -430,7 +430,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
     assert(s<242);
     tot-=lb[s];
     //if(filtered[s].size()==0)filtered[s]=filter(oktestwords,testword,s);
-    if(depth<=prl){cpu1=cpu();prs(depth*4+2);printf("S%d %s %5lu %5d %8.2f %d/%d\n",depth,decscore(s).c_str(),filtered[s].size(),sz,cpu(),k,n);fflush(stdout);}
+    if(depth<=prl){cpu1=cpu();prs(depth*4+2);printf("S%d %s %5lu %5d %12lld %9.2f %d/%d\n",depth,decscore(s).c_str(),filtered[s].size(),sz,totentries,cpu(),k,n);fflush(stdout);}
     inc=sz+minoverwords(filtered[s],equiv[s],depth+1,0,beta-tot-sz);
     assert(depthonly||inc>=lb[s]);
     lb[s]=inc;
@@ -439,7 +439,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
       if(depth<=prl){
         double cpu2=cpu();
         prs(depth*4+2);
-        printf("C%d %s %5lu %5d %8.2f    used,wasted = %12.4f %12.4f\n",
+        printf("C%d %s %5lu %5d %9.2f    used,wasted = %12.4f %12.4f\n",
                depth,decscore(s).c_str(),filtered[s].size(),sz,cpu2,cpu2-cpu1,cpu1-cpu0);
         fflush(stdout);
       }
@@ -527,7 +527,9 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
   // If there isn't a set of allowable test words T_1,...,T_r (subset of oktestwords) where r=remdepth-1, s.t. their union covers which covers
   // the current live set L, or all but one of L, then we can cutoff immediately, because in that case we can never get it down to a unique
   // element of E in r guesses.
-  // At the moment we approximate the coverage question by simply counting the largest r of |D(T,E)| for allowable T.
+  // There are two ways this is used:
+  // 1) a static analysis where we approximate the coverage question by simply counting the largest r of |D(T,E)| for allowable T, and
+  // 2) if there was no static cutoff, then, according to a usefulness heuristic, a separate search may be made replacing the hidden word list with the live endgame set
   for(int h:hwsubset)for(int e:wordnum2endgame[h])endcount[e]++;
   for(e=0;e<numendgames;e++)if(endcount[e]>mx){mx=endcount[e];biggestendgame=e;}
   if(depth<=prl){prs(depth*4);printf("Biggest endgame = %d %d %d\n",biggestendgame,mx,remdepth);}
@@ -557,6 +559,7 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
     if(depth<=prl){prs(depth*4);printf("Endgame notcut %d %d %d %5d\n",remdepth-1,mx-1,sum,nt);}
     // This heuristic is a good indication of whether further endgame analysis is likely to be valuable
     int heuristic=(remdepth-1)-(sum-(mx-1));
+    // Search using H=L (see above). This enormously speeds up searches like wordle -h wordlist_nyt20220215_all -g5 -d
     if(heuristic>0&&liveendgame.size()<hwsubset.size()){
       int v=minoverwords(oktestwords,liveendgame,depth,0,beta,0,0);
       if(v>=beta){
@@ -574,7 +577,7 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
   double cpu1=cpu0;
   for(word=0;word<maxw;word++){
     int testword=trywordlist[word];
-    if(depth<=prl){prs(depth*4);printf("M%d %s %12lld %8.2f %d/%d %d %d\n",depth,testwords[testword].c_str(),totentries,cpu(),word,maxw,beta,mi);fflush(stdout);}
+    if(depth<=prl){prs(depth*4);printf("M%d %s %12lld %9.2f %d/%d %d %d\n",depth,testwords[testword].c_str(),totentries,cpu(),word,maxw,beta,mi);fflush(stdout);}
     int tot=sumoverpartitions(oktestwords,hwsubset,depth,testword,biggestendgame,toplevel,beta);
 
     if(toplevel){
@@ -592,7 +595,7 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
       mi=tot;best=testword;
       if(toplevel<2)beta=mi;
     }
-    if(depth<=prl){prs(depth*4);printf("N%d %s %12lld %8.2f %d/%d %d %d : %d\n",depth,testwords[testword].c_str(),totentries,cpu(),word,maxw,beta,mi,tot);fflush(stdout);}
+    if(depth<=prl){prs(depth*4);printf("N%d %s %12lld %9.2f %d/%d %d %d : %d\n",depth,testwords[testword].c_str(),totentries,cpu(),word,maxw,beta,mi,tot);fflush(stdout);}
     if(toplevel<2&&mi<=alpha)break;// alpha is a guaranteed lower bound (not just a number that we don't care how much we are below), so if we cutoff here it is still valid to write mi to cache
     if(depthonly&&toplevel<2&&mi<infinity/2)break;
 
@@ -638,7 +641,7 @@ int minoverwords_inner(list&oktestwords,list&hwsubset,int depth,int toplevel,int
     int d;
     int64 n=0;
     for(d=0;d<=MAXDEPTH;d++)n+=cachesize[d];
-    //if(prl>=0)printf("%8.2f Est cache size %.3f GB\n",cpu(),n/1e9);
+    //if(prl>=0)printf("%9.2f Est cache size %.3f GB\n",cpu(),n/1e9);
     if(n/1e9>=cachememlimit){
       int64 nmax=int64(0.9*cachememlimit*1e9);
       for(d=MAXDEPTH;d>=0;d--){
@@ -648,7 +651,7 @@ int minoverwords_inner(list&oktestwords,list&hwsubset,int depth,int toplevel,int
         lbound[d].clear();
         if(n<=nmax)break;
       }
-      if(prl>=0)printf("%8.2f Clearing caches at depths >=%d\n",cpu(),d);
+      if(prl>=0)printf("%9.2f Clearing caches at depths >=%d\n",cpu(),d);
     }
     if(checkpointinterval>=0&&cpu()>=nextcheckpoint){
       writeoptstats();
@@ -970,6 +973,7 @@ int main(int ac,char**av){
     fprintf(stderr,"       -w<string> start game in this state, e.g., salet.BBBYB or salet.BBBYB.drone or salet.BBBYB.drone.YBBBG\n");
     fprintf(stderr,"       -T enables timings (will slow it down)\n");
     fprintf(stderr,"       -x<string> output directory (for saving cache files etc)-\n");
+    fprintf(stderr,"       -z<int> debug depth: print messages at depths up to this number\n");
     exit(1);
   }
 
@@ -1014,7 +1018,8 @@ int main(int ac,char**av){
     nh=state.hwsubset.size();
   }
   printf("Best first guess score %s= %d\n",depthonly&&o<infinity?"<":"",o);
-  if(!depthonly)printf("Average guesses reqd using best first guess = %.4f\n",o/double(nh));
+  if(!depthonly&&o<infinity/2)printf("Average guesses reqd using best first guess = %.4f\n",o/double(nh));
+  printf("Nodes used = %lld\n",totentries);
   double cpu1=cpu()-cpu0;
   printf("Time taken = %.2fs\n",cpu1);
   for(i=0;i<=maxguesses;i++)if(cachereads[i]||entrystats[i][0])printf("Depth %2d: Entries = %12lld %12lld %12lld    Cache writes reads misses = %12lld %12lld %12lld\n",i,entrystats[i][0],entrystats[i][1],entrystats[i][2],cachewrites[i],cachereads[i],cachemiss[i]);
