@@ -339,7 +339,7 @@ list filter(list&words,int t,int s){
   return ret;
 }
 
-int minoverwords(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta=infinity,int fast=0,int *rbest=0);
+int minoverwords(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta,int fast,int *rbest);
 
 // oktestwords = T = allowable words to guess with
 // hwsubset = H = set of possible hidden words
@@ -369,7 +369,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
     if(sz){
       if(s==242){lb[s]=1;tot+=1;continue;}
       // Don't need to filter here because oktestwords isn't used in fastmode 1
-      int o=minoverwords(oktestwords,equiv[s],depth+1,0,beta-tot-sz,1);
+      int o=minoverwords(oktestwords,equiv[s],depth+1,0,beta-tot-sz,1,0);
       if(o>=0){lb[s]=sz+o;tot+=lb[s];continue;}
       lb[s]=3*sz-1+max(sz-243,0);
       tot+=lb[s];
@@ -391,7 +391,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
     filtered[s]=filter(oktestwords,testword,s);
     if(toplevel<2&&sz==nh&&filtered[s].size()==oktestwords.size())return beta;// Reversible move in the sense of Conway: if a move doesn't improve your position then treat it as illegal.
     tot-=lb[s];
-    int o=minoverwords(filtered[s],equiv[s],depth+1,0,beta-tot-sz,2);
+    int o=minoverwords(filtered[s],equiv[s],depth+1,0,beta-tot-sz,2,0);
     if(o>=0){int inc=sz+o;assert(depthonly||inc>=lb[s]);lb[s]=inc;tot+=inc;continue;}
     lb[s]=3*sz;
     {int v=readlboundcache(depth+1,filtered[s],equiv[s]);if(v>=0)lb[s]=max(lb[s],sz+v);}
@@ -431,7 +431,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
     tot-=lb[s];
     //if(filtered[s].size()==0)filtered[s]=filter(oktestwords,testword,s);
     if(depth<=prl){cpu1=cpu();prs(depth*4+2);printf("S%d %s %5lu %5d %12lld %9.2f %d/%d\n",depth,decscore(s).c_str(),filtered[s].size(),sz,totentries,cpu(),k,n);fflush(stdout);}
-    inc=sz+minoverwords(filtered[s],equiv[s],depth+1,0,beta-tot-sz);
+    inc=sz+minoverwords(filtered[s],equiv[s],depth+1,0,beta-tot-sz,0,0);
     assert(depthonly||inc>=lb[s]);
     lb[s]=inc;
     tot+=inc;
@@ -483,19 +483,19 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
         }
         if(!hardmode){
           // This is similar to above, but in easy mode we can say more because the allowable test set doesn't change. We can even say something that may be useful in average score mode (as opposed to depthonly mode).
-          // The basic point is that eval(H0 u H1) >= eval(H0) + eval(H1). That's because it can't hurt to know some extra information (about whether the hidden word is in H0 or H1) which we can choose not to use.
+          // The point is that eval(H0 u H1) >= eval(H0) + eval(H1). That's because it can't hurt to know some extra information (about whether the hidden word is in H0 or H1) which we can choose not to use.
           // The proof is that you can use the optimal strategy for H0 u H1 separately on H0 and on H1.
           // The use case is generating lower bounds like
           //   eval({h in H | score(bowat,h) in *BBBY}) >= eval({h in H | score(bowat,h)=BBBBY}) + eval({h in H | score(bowat,h)=YBBBY}) + eval({h in H | score(bowat,h)=GBBBY})
           for(i=0;i<5;i++){
             int s0=s-((s/mm[i])%3)*mm[i];
+            int v=0;
+            for(a=0;a<3;a++)v=min(v+lb[s0+mm[i]*a]-int(equiv[s0+mm[i]*a].size()),infinity);
+            assert(v>=0);
             list u=equiv[s0];
             u.insert(u.end(),equiv[s0+mm[i]].begin(),equiv[s0+mm[i]].end());
             u.insert(u.end(),equiv[s0+2*mm[i]].begin(),equiv[s0+2*mm[i]].end());
             std::sort(u.begin(),u.end());
-            int v=0;
-            for(a=0;a<3;a++)v=min(v+lb[s0+mm[i]*a]-int(equiv[s0+mm[i]*a].size()),infinity);
-            assert(v>=0);
             writelboundcache(depth+1,u,u,v);
           }
         }
@@ -510,7 +510,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
   return min(tot,beta);
 }
 
-int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int depth,int toplevel,int alpha=0,int beta=infinity,int *rbest=0){
+int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int depth,int toplevel,int lowerbound,int beta,int *rbest){
   int nh=hwsubset.size(),nt=oktestwords.size(),remdepth=maxguesses-depth;
   vector<UC> endcount(numendgames);
   int e,biggestendgame=-1,mx=0;
@@ -596,7 +596,7 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
       if(toplevel<2)beta=mi;
     }
     if(depth<=prl){prs(depth*4);printf("N%d %s %12lld %9.2f %d/%d %d %d : %d\n",depth,testwords[testword].c_str(),totentries,cpu(),word,maxw,beta,mi,tot);fflush(stdout);}
-    if(toplevel<2&&mi<=alpha)break;// alpha is a guaranteed lower bound (not just a number that we don't care how much we are below), so if we cutoff here it is still valid to write mi to cache
+    if(toplevel<2&&mi<=lowerbound)break;// lowerbound is a guaranteed lower bound (not just a number that we don't care how much we are below), so if we cutoff here it is still valid to write mi to cache
     if(depthonly&&toplevel<2&&mi<infinity/2)break;
 
   }
@@ -611,7 +611,7 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
 
 // Returns minimum_{s in considered strategies} sum_{h in hiddenwordsubset} (number of guesses strategy s requires for word h)
 //      or -1 in fast mode, which means "Can't find a fast answer"
-int minoverwords_inner(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta=infinity,int fast=0,int *rbest=0){
+int minoverwords_inner(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta,int fast,int *rbest){
   int i,t,nh=hwsubset.size(),remdepth=maxguesses-depth;
   assert(depth<MAXDEPTH);
   totentries++;
@@ -661,6 +661,24 @@ int minoverwords_inner(list&oktestwords,list&hwsubset,int depth,int toplevel,int
     nextcheck+=checkinterval;
   }
 
+  // val(x_1,...,x_k) refers to the total number of moves when the partition has sizes {x_1,...,x_k}, and the none of them are correct (GGGGG).
+  // If one of them is correct, then may as well be the last one, so x_k=1, and add suffix '*': val(x_1,...,x_{k-1},1*)
+  // In general, the total number of moves isn't just a function of these numbers, so it's a slight abuse of notation,
+  // but it's single-valued if x_i are all <=2.
+  // Let n = sum_i x_i    (n=nh in the program)
+  // val(1,1,...,1*) = 2n-1
+  // val(1,1,...,1) = 2n
+  // val(2,1,...,1*) = 1*2+1*3+(n-3)*2+1 = 2n
+  // val(2,1,...,1) = 1*2+1*3+(n-2)*2 = 2n+1
+  // val(2,2,1,...,1*) = 2*(2+3)+(n-5)*2 + 1 = 2n+1
+  // val(3,1,...,1*) = (2+3+3 or 3+3+3)+(n-4)*2 +1 = 2n+1 or 2n+2
+  // val(2,2,1,...,1) = 2*(2+3)+(n-4)*2 = 2n+2
+  // val(3,1,...,1) = (2+3+3 or 3+3+3)+(n-3)*2 = 2n+2 or 2n+3
+  // val(x_1,...,x_k*) >= n+sum(2*x_i-1) - 1  = 3n-k-1, equality if (though not only if) all x_i<=2
+  // val(x_1,...,x_k) >= n+sum(2*x_i-1) = 3n-k, equality if (though not only if) all x_i<=2
+  
+  // We know remdepth>=2 here because of earlier remdepth<=1 cutoff)
+  
   int nt=oktestwords.size();
   int thr;
   vector<uint64> s2a(nt);
@@ -679,21 +697,23 @@ int minoverwords_inner(list&oktestwords,list&hwsubset,int depth,int toplevel,int
       if(bad==0){
         writeoptcache(depth,oktestwords,hwsubset,2*nh-1);
         if(rbest)*rbest=t;
-        return 2*nh-1;
+        return 2*nh-1;// val(1,1,...,1*) = 2n-1 (using a hidden word as test word)
       }
       if(bad==1)good=t;
     }
     if(good>=0&&remdepth>=3){
       writeoptcache(depth,oktestwords,hwsubset,2*nh);
       if(rbest)*rbest=good;
-      return 2*nh;
+      return 2*nh;// val(2,1,1,...,1*) = 2n (using a hidden word as test word)
     }
     tock(5);
     if(fast==2)return -1;
   }
   
   tick(1);
-  int lb1=infinity;
+  // lb1 is an actual lower bound
+  // ub2 is the upper bound formed my minimised over only those words whose individual lower bound is known to be exact
+  int lb1=infinity,ub1=infinity;
   good=-1;
   for(i=0;i<nt;i++){
     t=oktestwords[i];
@@ -707,13 +727,14 @@ int minoverwords_inner(list&oktestwords,list&hwsubset,int depth,int toplevel,int
       s2+=2*c-1;
     }
     lb-=count[242];
+    // lb evaluates RHS of val(x_1,...,x_k*) >= 3n-k-1 and val(x_1,...,x_k) >= 3n-k as described above
     if(lb<lb1)lb1=lb;
-    if(lb==2*nh+1&&upto2)good=t;// Try this later, after eliminating the 2*nh possibilities
-    // Check for a split into singletons using a word that couldn't be the answer, which means we can achieve 2*nh within remdepth 2
+    if(lb<ub1&&upto2){ub1=lb;good=t;}// Targetting the cases val(2,...,2,1,...,1) and val(2,...,2,1,...,1*).
+    // Check for a split into singletons using a word that couldn't be the answer, which means we can achieve 2*nh within remdepth 2 and return immediately
     if(toplevel<2&&count[242]==0&&s2==nh){
       writeoptcache(depth,oktestwords,hwsubset,2*nh);
       if(rbest)*rbest=t;
-      return 2*nh;
+      return 2*nh;// val(1,1,...,1) = 2n (not using a hidden word as test word)
     }
     s2a[i]=int64(s2mult*s2+nh*lb)<<32|t;
   }
@@ -725,16 +746,15 @@ int minoverwords_inner(list&oktestwords,list&hwsubset,int depth,int toplevel,int
       writeoptcache(depth,oktestwords,hwsubset,infinity);
       return infinity;
     }
-    if(good>=0){
-      // (Can't early exit like this for higher scores than 2*nh+1, because 2*nh+1 can arise from a partition 3, 1, 1, ..., if 3 is optimal)
-      writeoptcache(depth,oktestwords,hwsubset,2*nh+1);
+    if(lb1==ub1&&good>=0){
+      writeoptcache(depth,oktestwords,hwsubset,lb1);
       if(rbest)*rbest=good;
-      return 2*nh+1;
+      return lb1;
     }
     if(lb1>=beta)return beta;
   }
   if(toplevel&&n0th>0)thr=n0th; else thr=nth;
-  if(depthonly||depth<=2)std::sort(s2a.begin(),s2a.end()); else if(thr-1<nt)std::nth_element(&s2a[0],&s2a[thr-1],&s2a[nt]);
+  std::sort(s2a.begin(),s2a.end());
 
   list trywordlist;
   int word,maxw=min(thr,nt);
