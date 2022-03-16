@@ -33,6 +33,16 @@ template<class T> struct array2d {
   void resize(size_t r, size_t c){rows=r;cols=c;data.resize(r*c);}
   T* operator[](size_t index){return &data[index*cols];}// First level indexing
 };
+template<typename... Args> string stringprintf( const string& format, Args... args ){
+  size_t size=512;
+  vector<char> buf(size);
+  size_t asize=std::snprintf( &buf[0], size, format.c_str(), args ... )+1;
+  if(asize>=size){
+    buf.resize(asize);
+    std::snprintf( &buf[0], asize, format.c_str(), args ... );
+  }
+  return string(&buf[0],asize-1);
+}
 const int infinity=1000000000;
 const char*outdir=0;
 int showtop=0,s2mult=2;
@@ -56,7 +66,7 @@ const char*toplist=0,*topword=0;
 int64 totentries=0,nextcheck=0,checkinterval=1000000;
 double cachememlimit=2;// Approximate total memory limit for opt and lbound caches in GB
 double nextcheckpoint=0,checkpointinterval=-1;
-int humanorder[243];// Order the 243 scores in alphabetical order
+int treeorder[243];// Used to specify the order of scores in decision tree ouptut
 array2d<uint64> multiset64;
 int greenyellowpos[243];
 uint greenmask25bit[243];
@@ -70,6 +80,7 @@ int numendgames;
 unsigned int minendgamecount=4;
 int hardmode=0;
 int exhaust=0;// With exhaustive search certain kinds of reasoning become valid, so we want to keep a note of whether we're exhausting or not.
+bool treestyle_hollow=true;
 struct state {
   int depth;
   list oktestwords,hwsubset;
@@ -815,8 +826,8 @@ int toplevel_minoverwords(int beta,int*rbest,state*rstate=0){
   
 }
 
-int printtree(list oktestwords,list&hwsubset,int depth,FILE*tfp){
-  int i,j,o,s,best;
+int printtree(list oktestwords,list&hwsubset,string sofar,int depth,FILE*tfp){
+  int i,o,s,best;
   state state;
 
   if(depth==0){
@@ -824,13 +835,13 @@ int printtree(list oktestwords,list&hwsubset,int depth,FILE*tfp){
     depth=state.depth;
     oktestwords=state.oktestwords;
     hwsubset=state.hwsubset;
-    for(j=0;j<depth*13;j++)fprintf(tfp," ");
   } else o=minoverwords(oktestwords,hwsubset,depth,0,infinity,0,&best);
   if(best==-1){
     fprintf(tfp,"IMPOSSIBLE\n");
     return o;
   }
-  fprintf(tfp,"%s ",testwords[best].c_str());
+  if(sofar!="")sofar+=" ";
+  sofar+=testwords[best]+" ";
   
   list equiv[243];
   for(int h:hwsubset){
@@ -839,17 +850,15 @@ int printtree(list oktestwords,list&hwsubset,int depth,FILE*tfp){
   }
   int first=1;
   for(i=0;i<243;i++){
-    s=humanorder[i];
+    s=treeorder[i];
     if(equiv[s].size()){
-      if(!first)for(j=0;j<depth*13+6;j++)fprintf(tfp," ");
-      first=0;
-      fprintf(tfp,"%s%d",decscore(s).c_str(),depth+1);
+      string sofar1=sofar+decscore(s)+stringprintf("%d",depth+1);
       if(s<242){
-        fprintf(tfp," ");
-        printtree(filter(oktestwords,best,s),equiv[s],depth+1,tfp);
+        printtree(filter(oktestwords,best,s),equiv[s],sofar1,depth+1,tfp);
       }else{
-        fprintf(tfp,"\n");
+        fprintf(tfp,"%s\n",sofar1.c_str());
       }
+      if(first&&treestyle_hollow){sofar=string(sofar.size(),' ');first=0;}
     }
   }
   return o;
@@ -917,7 +926,7 @@ void initendgames(){
   }
 }
 
-void initstuff(const char*loadcache){
+void initstuff(const char*loadcache,const char*treestyle){
   printf("Initialising...");fflush(stdout);
   hiddenwords=load(wordlist_hidden_name);
   testwords=load(wordlist_all_name);
@@ -934,9 +943,27 @@ void initstuff(const char*loadcache){
   writewordlist(alltest,"testwords");
   writewordlist(allhidden,"hiddenwords");
   maxguesses=min(maxguesses,MAXDEPTH);
-  for(i=0;i<243;i++)humanorder[i]=i;
-  auto cmp=[](const int&i0,const int&i1)->bool{return decscore(i0)<decscore(i1);};
-  std::sort(humanorder,humanorder+243,cmp);
+  // Options for formatting/ordering decision tree:
+  char charorder[4]="BGY";
+  if(treestyle){
+    if(tolower(treestyle[0])=='f')treestyle_hollow=false;
+    if(treestyle[1]!='\n'){
+      assert(strlen(treestyle)==4);
+      for(i=0;i<3;i++)charorder[i]=toupper(treestyle[1+i]);
+    }
+  }
+  for(i=0;i<243;i++)treeorder[i]=i;
+  auto cmp=[charorder](const int&i0,const int&i1)->bool{
+    int i;
+    string s0=decscore(i0),s1=decscore(i1);
+    for(i=0;i<5;i++){
+      int d=strchr(charorder,s0[i])-strchr(charorder,s1[i]);
+      if(d<0)return true;
+      if(d>0)return false;
+    }
+    return false;
+  };
+  std::sort(treeorder,treeorder+243,cmp);
   initendgames();
   printf("...done\n");
 }
@@ -944,9 +971,9 @@ void initstuff(const char*loadcache){
 int main(int ac,char**av){
   printf("Commit %s\n",COMMITDESC);
   int beta=infinity;
-  const char*treefn=0,*loadcache=0;
+  const char*treefn=0,*loadcache=0,*treestyle=0;
 
-  while(1)switch(getopt(ac,av,"a:b:c:C:dHh:r:R:n:N:g:l:p:st:M:Tw:x:z:")){
+  while(1)switch(getopt(ac,av,"a:b:c:C:dHh:r:R:n:N:g:l:p:S:st:M:Tw:x:z:")){
     case 'a': wordlist_all_name=strdup(optarg);break;
     case 'b': beta=atoi(optarg);break;
     case 'c': cachememlimit=atof(optarg);break;
@@ -963,6 +990,7 @@ int main(int ac,char**av){
     case 'r': minoptcacheremdepth=atoi(optarg);break;
     case 'R': minlboundcacheremdepth=atoi(optarg);break;
     case 's': showtop=1;break;
+    case 'S': treestyle=strdup(optarg);break;
     case 't': toplist=strdup(optarg);break;
     case 'T': timings=1;break;
     case 'w': topword=strdup(optarg);break;
@@ -990,6 +1018,7 @@ int main(int ac,char**av){
     fprintf(stderr,"       -r<int> only use the exact cache when the remaining depth is at least this number\n");
     fprintf(stderr,"       -R<int> only use the lower bound cache when the remaining depth is at least this number\n");
     fprintf(stderr,"       -s enables \"show top\" mode, to make it evaluate all moves at the top level without using a beta cutoff\n");
+    fprintf(stderr,"       -S<string> treestyle: h=hollow or f=full, optionally followed by sort order of B, G, Y. E.g., f, hBGY or fGYB\n");
     fprintf(stderr,"       -w<string> start game in this state, e.g., salet.BBBYB or salet.BBBYB.drone or salet.BBBYB.drone.YBBBG\n");
     fprintf(stderr,"       -T enables timings (will slow it down)\n");
     fprintf(stderr,"       -x<string> output directory (for saving cache files etc)-\n");
@@ -997,7 +1026,7 @@ int main(int ac,char**av){
     exit(1);
   }
 
-  initstuff(loadcache);
+  initstuff(loadcache,treestyle);
   if(nth==-1)nth=testwords.size();
   exhaust=(nth>=int(testwords.size()));
 
@@ -1026,7 +1055,7 @@ int main(int ac,char**av){
   if(treefn){
     FILE*tfp=fopen(treefn,"w");assert(tfp);
     list test0=alltest,hidden0=allhidden;
-    o=printtree(test0,hidden0,0,tfp);
+    o=printtree(test0,hidden0,"",0,tfp);
     fclose(tfp);
     printf("Written tree to file \"%s\"\n",treefn);
     nh=hidden0.size();
