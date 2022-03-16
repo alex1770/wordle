@@ -62,7 +62,6 @@ array2d<UC> sc;// wordle score array (map from hiddenword, testword -> colour sc
 vector<string> testwords,hiddenwords;
 list alltest,allhidden;
 const list emptylist;
-const char*toplist=0,*topword=0;
 int64 totentries=0,nextcheck=0,checkinterval=1000000;
 double cachememlimit=2;// Approximate total memory limit for opt and lbound caches in GB
 double nextcheckpoint=0,checkpointinterval=-1;
@@ -400,7 +399,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
     int sz=equiv[s].size();
     assert(s<242);
     filtered[s]=filter(oktestwords,testword,s);
-    if(toplevel<2&&sz==nh&&filtered[s].size()==oktestwords.size())return beta;// Reversible move in the sense of Conway: if a move doesn't improve your position then treat it as illegal.
+    if(toplevel==0&&sz==nh&&filtered[s].size()==oktestwords.size())return beta;// Reversible move in the sense of Conway: if a move doesn't improve your position then treat it as illegal.
     tot-=lb[s];
     int o=minoverwords(filtered[s],equiv[s],depth+1,0,beta-tot-sz,2,0);
     if(o>=0){int inc=sz+o;assert(depthonly||inc>=lb[s]);lb[s]=inc;tot+=inc;continue;}
@@ -591,7 +590,7 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
     if(depth<=prl){prs(depth*4);printf("M%d %s %12lld %9.2f %d/%d %d %d\n",depth,testwords[testword].c_str(),totentries,cpu(),word,maxw,beta,mi);fflush(stdout);}
     int tot=sumoverpartitions(oktestwords,hwsubset,depth,testword,biggestendgame,toplevel,beta);
 
-    if(toplevel){
+    if(toplevel&&prl>=-1){
       double cpu2=cpu();
       printf("First guess %s %s= %d     %5d / %5d    dCPU = %9.2f   CPU = %9.2f\n",
              testwords[testword].c_str(),tot<beta||tot==infinity?" ":">",tot,word,maxw,cpu2-cpu1,cpu2-cpu0);
@@ -782,9 +781,9 @@ int minoverwords(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta,
   return min(o,beta);
 }
 
-int toplevel_minoverwords(int beta,int*rbest,state*rstate=0){
+int toplevel_minoverwords(const char*toplist,const char*topword,int beta,int*rbest,state*rstate=0){
   vector<string> initial=split(topword?topword:"",".,");
-  int i,n=initial.size(),testword=-1;
+  int i,n=initial.size(),s=0,testword=-1;
   list oktestwords=alltest,hwsubset=allhidden;
   for(i=0;i<n;i+=2){
     testword=-1;
@@ -793,7 +792,7 @@ int toplevel_minoverwords(int beta,int*rbest,state*rstate=0){
     if(testword==-1){fprintf(stderr,"Initial word %s is illegal\n",initial[i].c_str());exit(1);}
     if(i+1==n)break;
     // Reduce oktestwords and hwsubset, given that the word initial[i] scored initial[i+1]
-    int s=encscore(initial[i+1]);
+    s=encscore(initial[i+1]);
     oktestwords=filter(oktestwords,testword,s);
     list hwnew;
     for(int h:hwsubset)if(sc[h][testword]==s)hwnew.push_back(h);
@@ -804,7 +803,9 @@ int toplevel_minoverwords(int beta,int*rbest,state*rstate=0){
   writewordlist(oktestwords,"testwords_afterinitial");
 
   int depth=i/2;
+  if(rbest)*rbest=-1;
   if(rstate){rstate->depth=depth;rstate->oktestwords=oktestwords;rstate->hwsubset=hwsubset;}
+  if(i==n&&n>0&&s==242)return 0;// Already solved - no more guesses required
   
   if(i==n&&!toplist)return minoverwords(oktestwords,hwsubset,depth,1+showtop,beta,0,rbest);
 
@@ -826,12 +827,12 @@ int toplevel_minoverwords(int beta,int*rbest,state*rstate=0){
   
 }
 
-int printtree(list oktestwords,list&hwsubset,string sofar,int depth,FILE*tfp){
+int printtree(const char*toplist,const char*topword,list oktestwords,list&hwsubset,string sofar,int depth,FILE*tfp){
   int i,o,s,best;
   state state;
 
   if(depth==0){
-    o=toplevel_minoverwords(infinity,&best,&state);
+    o=toplevel_minoverwords(toplist,topword,infinity,&best,&state);
     depth=state.depth;
     oktestwords=state.oktestwords;
     hwsubset=state.hwsubset;
@@ -854,7 +855,7 @@ int printtree(list oktestwords,list&hwsubset,string sofar,int depth,FILE*tfp){
     if(equiv[s].size()){
       string sofar1=sofar+decscore(s)+stringprintf("%d",depth+1);
       if(s<242){
-        printtree(filter(oktestwords,best,s),equiv[s],sofar1,depth+1,tfp);
+        printtree(0,0,filter(oktestwords,best,s),equiv[s],sofar1,depth+1,tfp);
       }else{
         fprintf(tfp,"%s\n",sofar1.c_str());
       }
@@ -926,6 +927,63 @@ void initendgames(){
   }
 }
 
+void analyseplay(string analyse){
+  int best;
+  state state;
+  int i,n=analyse.size(),o,prbest=-1;
+  double preve;
+  int prevo;
+  prl=-2;
+  exhaust=0;
+  nth=hardmode?250:100;n0th=10;
+  printf("\n");
+  prevo=toplevel_minoverwords(0,0,infinity,&prbest,&state);
+  preve=prevo/double(state.hwsubset.size());
+  for(i=5;i<=n;i+=6){
+    o=toplevel_minoverwords(0,analyse.substr(0,i).c_str(),infinity,&best,&state);
+    double e=o/double(state.hwsubset.size());
+    printf("%s: ",analyse.substr(i-5,5).c_str());
+    if((i+1)%12){
+      if(prbest>=0){
+        if(o<infinity){
+          double inacc=e-preve;
+          printf("Inaccuracy = %7.4f guesses (",inacc);
+          int l;
+          if(inacc==0)l=printf("perfect choice!"); else
+            if(inacc<0.1)l=printf("near perfect choice"); else
+              if(inacc<0.2)l=printf("fair choice"); else
+                if(inacc<0.35)l=printf("not a great choice"); else
+                  if(inacc<0.5)l=printf("bad choice"); else
+                    l=printf("very bad choice");
+          printf(")");prs(21-l);
+          printf("Best choice was %s\n",testwords[prbest].c_str());
+        }
+        else printf("Inaccuracy = infinity guesses (your choice is not guaranteed to work within %d guesses, but there was a choice that worked); best choice was %s\n",maxguesses,testwords[prbest].c_str());
+      }else{
+        printf("Can't measure accuracy because there was no word that guaranteed to work within %d guesses\n",maxguesses);
+      }
+    }else{
+      if(prevo==infinity&&o<infinity)printf("Luck = infinity guesses (worst case didn't happen and now it's back to being solvable within %d guesses)\n",maxguesses);
+      if(o==infinity)printf("Luck = -infinity guesses (unfortunately you didn't get lucky, and it's still not solvable within %d guesses)\n",maxguesses);
+      if(prevo<infinity&&o<infinity){
+        double luck=preve-e-1;
+        printf("Luck       = %7.4f guesses (",luck);
+        if(luck<-1)printf("very unlucky"); else
+          if(luck<-0.3)printf("unlucky"); else
+            if(luck<0)printf("slightly unlucky"); else
+              if(luck<0.3)printf("slightly lucky"); else
+                if(luck<1)printf("lucky"); else
+                  printf("very lucky");
+        printf(")\n");
+      }
+    }
+    prevo=o;
+    preve=e;
+    prbest=best;
+  }
+  printf("\n");
+}
+
 void initstuff(const char*loadcache,const char*treestyle){
   printf("Initialising...");fflush(stdout);
   hiddenwords=load(wordlist_hidden_name);
@@ -971,10 +1029,11 @@ void initstuff(const char*loadcache,const char*treestyle){
 int main(int ac,char**av){
   printf("Commit %s\n",COMMITDESC);
   int beta=infinity;
-  const char*treefn=0,*loadcache=0,*treestyle=0;
+  const char*treefn=0,*loadcache=0,*treestyle=0,*analyse=0,*toplist=0,*topword=0;
 
-  while(1)switch(getopt(ac,av,"a:b:c:C:dHh:r:R:n:N:g:l:p:S:st:M:Tw:x:z:")){
+  while(1)switch(getopt(ac,av,"a:A:b:c:C:dHh:r:R:n:N:g:l:p:S:st:M:Tw:x:z:")){
     case 'a': wordlist_all_name=strdup(optarg);break;
+    case 'A': analyse=strdup(optarg);break;
     case 'b': beta=atoi(optarg);break;
     case 'c': cachememlimit=atof(optarg);break;
     case 'C': checkpointinterval=atof(optarg);break;
@@ -1004,6 +1063,7 @@ int main(int ac,char**av){
   err0:
     fprintf(stderr,"Usage: wordle [options]\n");
     fprintf(stderr,"       -a<string> filename for wordlist of allowable guesses\n");
+    fprintf(stderr,"       -A<string> (experimental) analyse your play for luck and skill. E.g., -A salet.bbbyb.drone.ybbbg\n");
     fprintf(stderr,"       -b<int> beta cutoff (default infinity)\n");
     fprintf(stderr,"       -c<float> approximate memory limit for cache in GB\n");
     fprintf(stderr,"       -C<float> cache checkpoint interval in seconds (default=no checkpointing)\n");
@@ -1018,7 +1078,7 @@ int main(int ac,char**av){
     fprintf(stderr,"       -r<int> only use the exact cache when the remaining depth is at least this number\n");
     fprintf(stderr,"       -R<int> only use the lower bound cache when the remaining depth is at least this number\n");
     fprintf(stderr,"       -s enables \"show top\" mode, to make it evaluate all moves at the top level without using a beta cutoff\n");
-    fprintf(stderr,"       -S<string> treestyle: h=hollow or f=full, optionally followed by sort order of B, G, Y. E.g., f, hBGY or fGYB\n");
+    fprintf(stderr,"       -S<string> set style of decision tree printing: h=hollow or f=full, optionally followed by sort order of B, G, Y. E.g., f, hBGY or fGYB\n");
     fprintf(stderr,"       -w<string> start game in this state, e.g., salet.BBBYB or salet.BBBYB.drone or salet.BBBYB.drone.YBBBG\n");
     fprintf(stderr,"       -T enables timings (will slow it down)\n");
     fprintf(stderr,"       -x<string> output directory (for saving cache files etc)-\n");
@@ -1052,22 +1112,24 @@ int main(int ac,char**av){
   fflush(stdout);
   double cpu0=cpu();
   int i,o,nh;
-  if(treefn){
-    FILE*tfp=fopen(treefn,"w");assert(tfp);
-    list test0=alltest,hidden0=allhidden;
-    o=printtree(test0,hidden0,"",0,tfp);
-    fclose(tfp);
-    printf("Written tree to file \"%s\"\n",treefn);
-    nh=hidden0.size();
-  }else{
-    int best;
-    state state;
-    o=toplevel_minoverwords(beta,&best,&state);
-    printf("Best first guess = %s\n",best>=0?testwords[best].c_str():"no-legal-guess");
-    nh=state.hwsubset.size();
+  if(analyse)analyseplay(analyse); else {
+    if(treefn){
+      FILE*tfp=fopen(treefn,"w");assert(tfp);
+      list test0=alltest,hidden0=allhidden;
+      o=printtree(toplist,topword,test0,hidden0,"",0,tfp);
+      fclose(tfp);
+      printf("Written tree to file \"%s\"\n",treefn);
+      nh=hidden0.size();
+    }else{
+      int best;
+      state state;
+      o=toplevel_minoverwords(toplist,topword,beta,&best,&state);
+      printf("Best first guess = %s\n",best>=0?testwords[best].c_str():"no-legal-guess");
+      nh=state.hwsubset.size();
+    }
+    printf("Best first guess score %s= %d\n",depthonly&&o<infinity?"<":"",o);
+    if(!depthonly&&o<infinity/2)printf("Average guesses reqd using best first guess = %.4f\n",o/double(nh));
   }
-  printf("Best first guess score %s= %d\n",depthonly&&o<infinity?"<":"",o);
-  if(!depthonly&&o<infinity/2)printf("Average guesses reqd using best first guess = %.4f\n",o/double(nh));
   printf("Nodes used = %lld\n",totentries);
   double cpu1=cpu()-cpu0;
   printf("Time taken = %.2fs\n",cpu1);
