@@ -970,10 +970,11 @@ void analyseplay(string analyse){
         printf("Luck       = %7.4f guesses (",luck);
         if(luck<-1)printf("very unlucky"); else
           if(luck<-0.3)printf("unlucky"); else
-            if(luck<0)printf("slightly unlucky"); else
-              if(luck<0.3)printf("slightly lucky"); else
-                if(luck<1)printf("lucky"); else
-                  printf("very lucky");
+            if(luck<-0.1)printf("slightly unlucky"); else
+              if(luck<0.1)printf("average luck"); else
+                if(luck<0.3)printf("slightly lucky"); else
+                  if(luck<1)printf("lucky"); else
+                    printf("very lucky");
         printf(")\n");
       }
     }
