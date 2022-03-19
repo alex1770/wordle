@@ -278,7 +278,7 @@ void writelboundcache(int depth,list&oktestwords,list&hwsubset,int v){
     list2 key=list2(hardmode?oktestwords:emptylist,hwsubset);
     map<list2,int>::iterator it;
     it=lbound[depth].find(key);
-    if(it!=lbound[depth].end()){cachesize[depth]+=keysize(key);it->second=max(it->second,v);} else lbound[depth][key]=v;
+    if(it!=lbound[depth].end())it->second=max(it->second,v); else {cachesize[depth]+=keysize(key);lbound[depth][key]=v;}
   }
 }
 
