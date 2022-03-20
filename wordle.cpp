@@ -72,8 +72,8 @@ uint greenmask25bit[243];
 vector<uint> testwords25bit;
 int depthonly=0;
 int prl=-1;
-const char*wordlist_hidden_name="wordlist_nyt20220215_hidden";
-const char*wordlist_all_name="wordlist_nyt20220215_all";
+const char*wordlist_hidden_name="wordlist_nyt20220316_hidden";
+const char*wordlist_all_name="wordlist_nyt20220316_all";
 vector<list> wordnum2endgame;
 int numendgames;
 unsigned int minendgamecount=4;
@@ -569,7 +569,7 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
     if(depth<=prl){prs(depth*4);printf("Endgame notcut %d %d %d %5d\n",remdepth-1,mx-1,sum,nt);}
     // This heuristic is a good indication of whether further endgame analysis is likely to be valuable
     int heuristic=(remdepth-1)-(sum-(mx-1));
-    // Search using H=L (see above). This enormously speeds up searches like wordle -h wordlist_nyt20220215_all -g5 -d
+    // Search using H=L (see above). This enormously speeds up searches like wordle -h wordlist_nyt20220316_all -g5 -d
     if(heuristic>0&&liveendgame.size()<hwsubset.size()){
       int v=minoverwords(oktestwords,liveendgame,depth,0,beta,0,0);
       if(v>=beta){
