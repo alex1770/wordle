@@ -485,7 +485,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
         // This indirect reasoning only applies for exhaustive search
         int a,i,j,mm[5]={1,3,9,27,81};
         tick(20+depth);
-        if(inc>=infinity/2){
+        if(!depthonly||inc>=infinity/2){
           // The reasoning here is, given an allowable set of test words T, and allowable set of hidden words H0 and H1, with H0 contained in H1, eval(T,H0) <= eval(T,H1)
           // The useful case to apply this to is "when a new letter scores 'B', at least it's better than wasting a letter (by reusing a known non-letter)"
           // This occurs quite a bit in long searches, where there is a long tail of useless test words containing known non-letters that are dominated by previous words.
@@ -503,7 +503,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
             u.insert(u.end(),equiv[s+mm[i]].begin(),equiv[s+mm[i]].end());
             u.insert(u.end(),equiv[s+2*mm[i]].begin(),equiv[s+2*mm[i]].end());
             std::sort(u.begin(),u.end());
-            writeoptcache(depth+1,filtered[s],u,infinity);
+            writelboundcache(depth+1,filtered[s],u,inc-u.size());
           }
           for(i=0;i<4;i++)if((s/mm[i])%3==0)for(j=i+1;j<5;j++)if((s/mm[j])%3==0){
             int a,b,t=0;
@@ -515,7 +515,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
                 u.insert(u.end(),e.begin(),e.end());
               }
               std::sort(u.begin(),u.end());
-              writeoptcache(depth+1,filtered[s],u,infinity);
+              writelboundcache(depth+1,filtered[s],u,inc-u.size());
             }
           }
         }
