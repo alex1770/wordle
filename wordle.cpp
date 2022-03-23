@@ -197,6 +197,10 @@ void prwordlist(list&wl){
   for(int i:wl)printf("%s ",testwords[i].c_str());
   printf("\n");
 }
+void prnumlist(list&wl){
+  for(int i:wl)printf("%d, ",i);
+  printf("\n");
+}
 
 void prunecache(){
   int d;
@@ -368,11 +372,18 @@ list filter(list&words,int t,int s){
 
 int minoverwords(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta,int fast,int *rbest);
 
-// oktestwords = T = allowable words to guess with
-// hwsubset = H = set of possible hidden words
-// testword = word that is used as the guess
-// sumoverpartitions() partitions hwsubset into H = H_1 u H_2 u ... u H_n according to the colour scores induced by testword,
-// and returns the sum over i of { the sum over h in H_i of the number of moves required to find h given that you know the hidden word is in H_i }
+// Inputs:
+//   oktestwords = T = allowable words to guess with
+//   hwsubset = H = set of possible hidden words
+//   testword = word that is used as the guess
+// Definition required to make sense of something that follows:
+//   sumoverpartitions() partitions hwsubset into H = H_1 u H_2 u ... u H_n according to the colour scores induced by testword.
+//   Let v = the sum over i of { the sum over h in H_i of the number of moves required to find h given that you know the hidden word is in H_i }
+//           (defined as infinity if can't be solved within the specified number of moves)
+// sumoverpartitions() returns
+//   A) v if v<beta,
+//   B) some number between beta and v inclusive, if v>=beta.
+//      It never returns an "infinite" number (let's say, defined as >=infinity/2) other than infinity itself.
 int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int biggestendgame,int toplevel,int beta){
   int i,k,m,n,s,nh=hwsubset.size();
   list equiv[243];
@@ -382,28 +393,27 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
     equiv[s].push_back(h);
   }
   tock(2);
-  int betac=min(beta,infinity/2);
-  
+   
+  // tot can only be infinite transiently: if it becomes infinite then it will return immediately, so arithmetic involving tot is always finite
+  // Same remark applies to lb[s]. So for example tot-=lb[s] only ever uses finite numbers.
+  // lb[s] could be >infinity transiently - only just before the function returns infinity
   int tot=0;
-  if(0>=betac)return beta;
-  
   int ind[243],lb[243]={0};
   // First loop over the partition finding out very fast (fast=1) information if available
   tick(3);
   for(n=s=0;s<243;s++){
-    if(tot>=betac)return beta;
+    if(tot>=beta)return tot;
     int sz=equiv[s].size();
     if(sz){
       if(s==242){lb[s]=1;tot+=1;continue;}
       // Don't need to filter here because oktestwords isn't used in fastmode 1
       int o=minoverwords(oktestwords,equiv[s],depth+1,0,beta-tot-sz,1,0);
-      if(o>=0){lb[s]=sz+o;tot+=lb[s];continue;}
-      lb[s]=3*sz-1+max(sz-243,0);
-      tot+=lb[s];
-      ind[n++]=s;
+      //if(depth<=prl){prs(depth*4+2);printf("S%da %s %12lld %5d %9.2f s=%d %d o=%d\n",depth,decscore(s).c_str(),totentries,sz,cpu(),s,n,o);fflush(stdout);}
+      if(o>=0)lb[s]=sz+o; else {lb[s]=3*sz-1+max(sz-243,0);ind[n++]=s;}
+      tot=min(tot+lb[s],infinity);
     }
   }
-  if(tot>=betac)return beta;
+  if(tot>=beta)return tot;
   tock(3);
   
   // Then loop over the partition finding out medium fast (fast=2) information if available
@@ -411,21 +421,22 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
 
   tick(4);
   for(k=m=0;k<n;k++){
-    if(tot>=betac)return beta;
+    if(tot>=beta)return tot;
     s=ind[k];
     int sz=equiv[s].size();
     assert(s<242);
     filtered[s]=filter(oktestwords,testword,s);
-    if(toplevel==0&&sz==nh&&filtered[s].size()==oktestwords.size())return beta;// Reversible move in the sense of Conway: if a move doesn't improve your position then treat it as illegal.
+    if(toplevel==0&&sz==nh&&filtered[s].size()==oktestwords.size())return infinity;// Reversible move in the sense of Conway: if a move doesn't improve your position then treat it as illegal.
     tot-=lb[s];
     int o=minoverwords(filtered[s],equiv[s],depth+1,0,beta-tot-sz,2,0);
-    if(o>=0){int inc=sz+o;assert(depthonly||inc>=lb[s]);lb[s]=inc;tot+=inc;continue;}
+    if(depth<=prl){prs(depth*4+2);printf("S%db %s %12lld %5d %9.2f s=%d %d/%d o=%d\n",depth,decscore(s).c_str(),totentries,sz,cpu(),s,k,n,o);fflush(stdout);}
+    if(o>=0){int inc=sz+o;assert(depthonly||inc>=lb[s]);lb[s]=inc;tot=min(tot+inc,infinity);continue;}
     lb[s]=3*sz;
     {int v=readlboundcache(depth+1,filtered[s],equiv[s]);if(v>=0)lb[s]=max(lb[s],sz+v);}
-    tot+=lb[s];
+    tot=min(tot+lb[s],infinity);
     ind[m++]=s;
   }
-  if(tot>=betac)return beta;
+  if(tot>=beta)return tot;
   n=m;
   
   tock(4);
@@ -457,12 +468,12 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
     assert(s<242);
     tot-=lb[s];
     //if(filtered[s].size()==0)filtered[s]=filter(oktestwords,testword,s);
-    if(depth<=prl){cpu1=cpu();prs(depth*4+2);printf("S%d %s %5lu %5d %12lld %9.2f %d/%d\n",depth,decscore(s).c_str(),filtered[s].size(),sz,totentries,cpu(),k,n);fflush(stdout);}
+    if(depth<=prl){cpu1=cpu();prs(depth*4+2);printf("S%dc %s %12lld %5lu %5d %9.2f %d/%d\n",depth,decscore(s).c_str(),totentries,filtered[s].size(),sz,cpu(),k,n);fflush(stdout);}
     inc=sz+minoverwords(filtered[s],equiv[s],depth+1,0,beta-tot-sz,0,0);
     assert(depthonly||inc>=lb[s]);
     lb[s]=inc;
-    tot+=inc;
-    if(tot>=betac){
+    tot=min(tot+inc,infinity);
+    if(tot>=beta){
       if(depth<=prl){
         double cpu2=cpu();
         prs(depth*4+2);
@@ -528,13 +539,12 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
         }
         tock(20+depth);
       }
-      return beta;
+      return tot;
     }
   }
   tock(10+depth);
   assert(tot>=0);
-  if(tot>=infinity/2)tot=infinity;
-  return min(tot,beta);
+  return tot;
 }
 
 int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int depth,int toplevel,int lowerbound,int beta,int *rbest){
@@ -598,7 +608,7 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
     if(depth<=prl){prs(depth*4);printf("Subendgame notcut %d %d %d %5d\n",remdepth-1,mx-1,sum,nt);}
   }
   
-  int mi=beta,best=-1,exact=0;
+  int mi=infinity,best=-1,exact=0;
   int word,maxw=trywordlist.size();
   double cpu0=cpu();
   double cpu1=cpu0;
@@ -617,17 +627,16 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
   
     // tot<beta implies all calls to minoverwords() returned an answer < the beta used to call it, which implies they are all exact
     // And if it's exact for one testword, then the final answer has to be exact because either hit a new exact word, or all subsequent words are >= it in score.
-    if(tot<beta)exact=1;
-    if(tot<mi){
-      mi=tot;best=testword;
-      if(toplevel<2)beta=mi;
+    if(tot<beta){
+      exact=1;
+      if(toplevel<2)beta=tot;
     }
+    if(tot<mi){mi=tot;best=testword;}
     if(depth<=prl){prs(depth*4);printf("N%d %s %12lld %9.2f %d/%d %d %d : %d\n",depth,testwords[testword].c_str(),totentries,cpu(),word,maxw,beta,mi,tot);fflush(stdout);}
     if(toplevel<2&&mi<=lowerbound)break;// lowerbound is a guaranteed lower bound (not just a number that we don't care how much we are below), so if we cutoff here it is still valid to write mi to cache
     if(depthonly&&toplevel<2&&mi<infinity/2)break;
 
   }
-  if(mi>=infinity/2){mi=infinity;exact=1;}
   if(exact){optstats[nh][0]++;optstats[nh][1]+=mi;}
   if(exact)writeoptcache(depth,oktestwords,hwsubset,mi);
   if(!exact)writelboundcache(depth,oktestwords,hwsubset,mi);
@@ -636,31 +645,38 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
 }
 
 
-// Returns minimum_{s in considered strategies} sum_{h in hiddenwordsubset} (number of guesses strategy s requires for word h)
-//      or -1 in fast mode, which means "Can't find a fast answer"
-int minoverwords_inner(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta,int fast,int *rbest){
+// Let v = minimum_{s in considered strategies} sum_{h in hiddenwordsubset} of (number of guesses strategy s requires for word h),
+//         defined as infinity if can't be solved within the specified number of moves
+// minoverwords() returns
+//      A) v if v<beta,
+//      B) some number between beta and v inclusive, if v>=beta,
+//         It never returns an "infinite" number (let's say, defined as >=infinity/2) other than infinity itself.
+//   or C) -1 in fast mode, which means "Can't find a fast answer".
+int minoverwords(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta,int fast,int *rbest){
   int i,t,nh=hwsubset.size(),remdepth=maxguesses-depth;
   assert(depth<MAXDEPTH);
   totentries++;
   entrystats[depth][0]++;
   if(depth<=prl){
     prs(depth*4);
-    printf("E%d %4d",depth,nh);
+    printf("E%d %12lld %4d",depth,totentries,nh);
     for(i=0;i<min(nh,200);i++)printf(" %s",testwords[hwsubset[i]].c_str());
     if(i<nh)printf(" ...\n"); else printf("\n");
     fflush(stdout);
   }
   if(rbest)*rbest=-1;
-  if(remdepth<=0)return beta;
-  if(2*nh-1>=beta)return beta;
+  if(remdepth<=0)return infinity;
+  if(2*nh-1>=beta)return 2*nh-1;
   if(nh==1){if(rbest)*rbest=hwsubset[0];return 1;}
-  if(remdepth<=1)return beta;
+  if(remdepth<=1)return infinity;
   if(nh==2){if(rbest)*rbest=hwsubset[0];return 3;}
   entrystats[depth][1]++;
   if(fast==1)return -1;
   if(!rbest&&toplevel<2){
-    int v=readoptcache(depth,oktestwords,hwsubset);if(v>=0)return v;
-    v=readlboundcache(depth,oktestwords,hwsubset);if(v>=beta)return v;
+    int v=readoptcache(depth,oktestwords,hwsubset);
+    if(v>=0)return v;
+    v=readlboundcache(depth,oktestwords,hwsubset);
+    if(v>=beta)return v;
   }
   entrystats[depth][2]++;
   tick(0);tock(0);// calibration
@@ -764,7 +780,7 @@ int minoverwords_inner(list&oktestwords,list&hwsubset,int depth,int toplevel,int
       if(rbest)*rbest=good;
       return lb1;
     }
-    if(lb1>=beta)return beta;
+    if(lb1>=beta)return lb1;
   }
   if(toplevel&&n0th>0)thr=n0th; else thr=nth;
   std::sort(s2a.begin(),s2a.end());
@@ -776,12 +792,6 @@ int minoverwords_inner(list&oktestwords,list&hwsubset,int depth,int toplevel,int
     trywordlist.push_back(testword);
   }
   return minoverwords_fixedlist(trywordlist,oktestwords,hwsubset,depth,toplevel,lb1,beta,rbest);
-}
-
-int minoverwords(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta,int fast,int *rbest){
-  int o=minoverwords_inner(oktestwords,hwsubset,depth,toplevel,beta,fast,rbest);
-  if(o==-1)return -1;
-  return min(o,beta);
 }
 
 int toplevel_minoverwords(const char*toplist,const char*topword,int beta,int*rbest,state*rstate=0){
