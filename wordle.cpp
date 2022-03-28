@@ -228,6 +228,7 @@ void writecacheentry(int depth,map<list2,int>&cache,list&oktestwords,list&hwsubs
 
 void loadmap(string path,map<list2,int>*ret,int maxd=MAXDEPTH){
   std::ifstream fp(path);
+  if(!fp){fprintf(stderr,"Couldn't open %s for reading\n",path.c_str());return;}
   string l;
   while(std::getline(fp,l)){
     vector<string> v0=split(l,":");
@@ -251,6 +252,13 @@ void loadcachefromdir(vector<string> loadcache){
     loadmap(dir+"/lboundcache",lbound,maxguesses-minlboundcacheremdepth);
     printf("...done\n");
     prunecache();
+  }
+  // Exact cache takes precedence over lbound cache
+  for(int d=0;d<=MAXDEPTH;d++){
+    for(auto it=lbound[d].cbegin();it!=lbound[d].cend();)if(opt[d].count(it->first)){
+      assert(it->second<=opt[d][it->first]);
+      it=lbound[d].erase(it);
+    }else ++it;
   }
 }
 
@@ -276,27 +284,21 @@ void savecache(){
   writemap(lbound,"lboundcache");
 }
 
-int readoptcache(int depth,list&oktestwords,list&hwsubset){
-  if(maxguesses-depth>=minoptcacheremdepth){
+int readcacheentry(int depth,int minremdepth,map<list2,int>&cache,list&oktestwords,list&hwsubset){
+  if(maxguesses-depth>=minremdepth){
     map<list2,int>::iterator it;
-    it=opt[depth].find(list2(hardmode?oktestwords:emptylist,hwsubset));
-    if(it!=opt[depth].end()){
-      cachereads[depth]++;
-      return it->second;
-    }else{
-      cachemiss[depth]++;
-    }
+    it=cache.find(list2(hardmode?oktestwords:emptylist,hwsubset));
+    if(it!=cache.end()){cachereads[depth]++;return it->second;}else cachemiss[depth]++;
   }
   return -1;
 }
 
+int readoptcache(int depth,list&oktestwords,list&hwsubset){
+  return readcacheentry(depth,minoptcacheremdepth,opt[depth],oktestwords,hwsubset);
+}
+
 int readlboundcache(int depth,list&oktestwords,list&hwsubset){
-  if(maxguesses-depth>=minlboundcacheremdepth){
-    map<list2,int>::iterator it;
-    it=lbound[depth].find(list2(hardmode?oktestwords:emptylist,hwsubset));
-    if(it!=lbound[depth].end())return it->second;
-  }
-  return -1;
+  return readcacheentry(depth,minlboundcacheremdepth,lbound[depth],oktestwords,hwsubset);
 }
 
 void writeoptcache(int depth,list&oktestwords,list&hwsubset,int v){
