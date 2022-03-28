@@ -946,12 +946,14 @@ void analyseplay(string analyse){
   int i,n=analyse.size(),o,prbest=-1;
   double preve;
   int prevo;
+  const char*desc=0;
   prl=-2;
   exhaust=0;
   nth=hardmode?250:100;n0th=10;
   printf("\n");
   prevo=toplevel_minoverwords(0,0,infinity,&prbest,&state);
   preve=prevo/double(state.hwsubset.size());
+  double totinacc=0,totluck=0;
   for(i=5;i<=n;i+=6){
     o=toplevel_minoverwords(0,analyse.substr(0,i).c_str(),infinity,&best,&state);
     double e=o/double(state.hwsubset.size());
@@ -960,41 +962,70 @@ void analyseplay(string analyse){
       if(prbest>=0){
         if(o<infinity){
           double inacc=e-preve;
-          printf("Inaccuracy = %7.4f guesses (",inacc);
-          int l;
-          if(inacc==0)l=printf("perfect choice!"); else
-            if(inacc<0.1)l=printf("near perfect choice"); else
-              if(inacc<0.2)l=printf("fair choice"); else
-                if(inacc<0.35)l=printf("not a great choice"); else
-                  if(inacc<0.5)l=printf("bad choice"); else
-                    l=printf("very bad choice");
-          printf(")");prs(21-l);
-          printf("Best choice was %s\n",testwords[prbest].c_str());
+          if(inacc==0)desc="Perfect choice!"; else
+            if(inacc<0.05)desc="Near perfect choice"; else
+              if(inacc<0.1)desc="Good choice"; else
+                if(inacc<0.2)desc="Fair choice"; else
+                  if(inacc<0.35)desc="Not a great choice"; else
+                    if(inacc<0.5)desc="Bad choice"; else
+                      desc="Very bad choice";
+          printf("%-21s (Inaccuracy = %7.4f guesses)    Best choice was %s\n",desc,inacc,testwords[prbest].c_str());
+          totinacc+=inacc;
+        } else {
+          printf("Inaccuracy = infinity guesses (your choice is not guaranteed to work within %d guesses, but there was a choice that worked); best choice was %s\n",maxguesses,testwords[prbest].c_str());
+          totinacc=1e10;
         }
-        else printf("Inaccuracy = infinity guesses (your choice is not guaranteed to work within %d guesses, but there was a choice that worked); best choice was %s\n",maxguesses,testwords[prbest].c_str());
       }else{
         printf("Can't measure accuracy because there was no word that guaranteed to work within %d guesses\n",maxguesses);
+        totinacc=1e10;
       }
     }else{
-      if(prevo==infinity&&o<infinity)printf("Luck = infinity guesses (worst case didn't happen and now it's back to being solvable within %d guesses)\n",maxguesses);
-      if(o==infinity)printf("Luck = -infinity guesses (unfortunately you didn't get lucky, and it's still not solvable within %d guesses)\n",maxguesses);
+      if(prevo==infinity&&o<infinity){
+        printf("Luck = infinity guesses (worst case didn't happen and now it's back to being solvable within %d guesses)\n",maxguesses);
+        totluck=1e10;
+      }
+      if(o==infinity){
+        printf("Luck = -infinity guesses (unfortunately you didn't get lucky, and it's still not solvable within %d guesses)\n",maxguesses);
+        totluck=1e10;
+      }
       if(prevo<infinity&&o<infinity){
         double luck=preve-e-1;
-        printf("Luck       = %7.4f guesses (",luck);
-        if(luck<-1)printf("very unlucky"); else
-          if(luck<-0.3)printf("unlucky"); else
-            if(luck<-0.1)printf("slightly unlucky"); else
-              if(luck<0.1)printf("average luck"); else
-                if(luck<0.3)printf("slightly lucky"); else
-                  if(luck<1)printf("lucky"); else
-                    printf("very lucky");
-        printf(")\n");
+        if(luck<-1)desc="Very unlucky"; else
+          if(luck<-0.3)desc="Unlucky"; else
+            if(luck<-0.1)desc="Slightly unlucky"; else
+              if(luck<0.1)desc="Average luck"; else
+                if(luck<0.3)desc="Slightly lucky"; else
+                  if(luck<1)desc="Lucky"; else
+                    desc="Very lucky";
+        printf("%-21s (Luck       = %7.4f guesses)\n",desc,luck);
+        totluck+=luck;
       }
     }
     prevo=o;
     preve=e;
     prbest=best;
   }
+  printf("-----------------------------------------------------------\n");
+  if(totinacc<1e9){
+    if(totinacc==0)desc="Perfect choices!"; else
+      if(totinacc<0.1)desc="Near perfect choices"; else
+        if(totinacc<0.2)desc="Good choices"; else
+          if(totinacc<0.4)desc="Fair choices"; else
+            if(totinacc<0.7)desc="Not great choices"; else
+              if(totinacc<1)desc="Bad choices"; else
+                desc="Very bad choices";
+    printf("Total rating of word choices: %-21s (Total inaccuracy = %7.4f guesses)\n",desc,totinacc);
+  } else printf("Total over word choices can't be calculated because of infinities\n");
+  if(totluck<1e9){
+    if(totluck<-1)desc="Very unlucky"; else
+      if(totluck<-0.3)desc="Unlucky"; else
+        if(totluck<-0.1)desc="Slightly unlucky"; else
+          if(totluck<0.1)desc="Average luck"; else
+            if(totluck<0.3)desc="Slightly lucky"; else
+              if(totluck<1)desc="Lucky"; else
+                desc="Very lucky";
+    printf("Total luck from colour scores: %-20s (Total luck = %7.4f guesses)\n",desc,totluck);
+  } else printf("Total luck can't be calculated because of infinities\n");
   printf("\n");
 }
 
