@@ -429,14 +429,21 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
     assert(s<242);
     filtered[s]=filter(oktestwords,testword,s);
     if(toplevel==0&&sz==nh&&filtered[s].size()==oktestwords.size())return infinity;// Reversible move in the sense of Conway: if a move doesn't improve your position then treat it as illegal.
+    if(depth<=prl){prs(depth*4+2);printf("S%db %s %12lld %5d tot=%d beta=%d lb-sz=%d %9.2f s=%d %d/%d\n",depth,decscore(s).c_str(),totentries,sz,tot,beta,lb[s]-sz,cpu(),s,k,n);fflush(stdout);}
     tot-=lb[s];
     int o=minoverwords(filtered[s],equiv[s],depth+1,0,beta-tot-sz,2,0);
-    if(depth<=prl){prs(depth*4+2);printf("S%db %s %12lld %5d %9.2f s=%d %d/%d o=%d\n",depth,decscore(s).c_str(),totentries,sz,cpu(),s,k,n,o);fflush(stdout);}
-    if(o>=0){int inc=sz+o;assert(depthonly||inc>=lb[s]);lb[s]=inc;tot=min(tot+inc,infinity);continue;}
-    lb[s]=3*sz;
-    {int v=readlboundcache(depth+1,filtered[s],equiv[s]);if(v>=0)lb[s]=max(lb[s],sz+v);}
-    tot=min(tot+lb[s],infinity);
-    ind[m++]=s;
+    if(o>=0){
+      int inc=sz+o;assert(depthonly||inc>=lb[s]);
+      lb[s]=inc;
+      tot=min(tot+inc,infinity);
+    } else {
+      lb[s]=3*sz;
+      int v=readlboundcache(depth+1,filtered[s],equiv[s]);
+      if(v>=0)lb[s]=max(lb[s],sz+v);
+      tot=min(tot+lb[s],infinity);
+      ind[m++]=s;
+    }
+    if(depth<=prl){prs(depth*4+2);printf("T%db %s %12lld %5d tot=%d beta=%d lb-sz=%d %9.2f s=%d o=%d %d/%d\n",depth,decscore(s).c_str(),totentries,sz,tot,beta,lb[s]-sz,cpu(),s,o,k,n);fflush(stdout);}
   }
   if(tot>=beta)return tot;
   n=m;
@@ -468,19 +475,20 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
     int sz=equiv[s].size();
     int inc;
     assert(s<242);
+    if(depth<=prl){cpu1=cpu();prs(depth*4+2);printf("S%dc %s %12lld %5lu %5d tot=%d beta=%d lb-sz=%d %9.2f %d/%d\n",depth,decscore(s).c_str(),totentries,filtered[s].size(),sz,tot,beta,lb[s]-sz,cpu(),k,n);fflush(stdout);}
     tot-=lb[s];
     //if(filtered[s].size()==0)filtered[s]=filter(oktestwords,testword,s);
-    if(depth<=prl){cpu1=cpu();prs(depth*4+2);printf("S%dc %s %12lld %5lu %5d %9.2f %d/%d\n",depth,decscore(s).c_str(),totentries,filtered[s].size(),sz,cpu(),k,n);fflush(stdout);}
     inc=sz+minoverwords(filtered[s],equiv[s],depth+1,0,beta-tot-sz,0,0);
     assert(depthonly||inc>=lb[s]);
     lb[s]=inc;
     tot=min(tot+inc,infinity);
+    if(depth<=prl){prs(depth*4+2);printf("T%dc %s %12lld %5lu %5d tot=%d beta=%d lb-sz=%d %9.2f %d/%d\n",depth,decscore(s).c_str(),totentries,filtered[s].size(),sz,tot,beta,lb[s]-sz,cpu(),k,n);fflush(stdout);}
     if(tot>=beta){
       if(depth<=prl){
         double cpu2=cpu();
         prs(depth*4+2);
-        printf("C%d %s %5lu %5d %9.2f    used,wasted = %12.4f %12.4f\n",
-               depth,decscore(s).c_str(),filtered[s].size(),sz,cpu2,cpu2-cpu1,cpu1-cpu0);
+        printf("C%d %s %5lu %5d %d>=%d %9.2f    used,wasted = %12.4f %12.4f\n",
+               depth,decscore(s).c_str(),filtered[s].size(),sz,tot,beta,cpu2,cpu2-cpu1,cpu1-cpu0);
         fflush(stdout);
       }
       if(exhaust){
@@ -772,8 +780,8 @@ int minoverwords(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta,
   tock(1);
 
   if(toplevel<2){
-    // Having not found a testword that splits into singletons, we must require at least 3 guesses in worst case.
     if(remdepth<=2){
+      // Having not found a testword that splits into singletons, we must require at least 3 guesses in worst case.
       writeoptcache(depth,oktestwords,hwsubset,infinity);
       return infinity;
     }
@@ -951,7 +959,8 @@ void analyseplay(string analyse){
   const char*desc=0;
   prl=-2;
   exhaust=0;
-  nth=hardmode?250:100;n0th=10;
+  nth=hardmode?250:100;
+  n0th=10;
   printf("\n");
   prevo=toplevel_minoverwords(0,0,infinity,&prbest,&state);
   preve=prevo/double(state.hwsubset.size());
