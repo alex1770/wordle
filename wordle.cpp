@@ -751,7 +751,7 @@ int minoverwords(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta,
   
   tick(1);
   // lb1 is an actual lower bound
-  // ub2 is the upper bound formed my minimised over only those words whose individual lower bound is known to be exact
+  // ub1 is the upper bound formed by minimising over only those words whose individual lower bound is known to be exact
   int lb1=infinity,ub1=infinity;
   good=-1;
   for(i=0;i<nt;i++){
@@ -803,6 +803,13 @@ int minoverwords(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta,
   for(word=0;word<maxw;word++){
     int testword=s2a[word]&((1ULL<<32)-1);
     trywordlist.push_back(testword);
+  }
+  if(rbest||toplevel==2){
+    // Even though (given the above condition) we need to find the best move, this lower bound can provide a better cutoff.
+    // (Can be useful when starting off with a pre-existing cache using -l.)
+    int v=readoptcache(depth,oktestwords,hwsubset);
+    if(v==-1)v=readlboundcache(depth,oktestwords,hwsubset);
+    if(v>lb1)lb1=v;
   }
   return minoverwords_fixedlist(trywordlist,oktestwords,hwsubset,depth,toplevel,lb1,beta,rbest);
 }
