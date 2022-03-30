@@ -790,7 +790,10 @@ int minoverwords(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta,
       if(rbest)*rbest=good;
       return lb1;
     }
-    if(lb1>=beta)return lb1;
+    if(lb1>=beta){
+      writelboundcache(depth,oktestwords,hwsubset,lb1);
+      return lb1;
+    }
   }
   if(toplevel&&n0th>0)thr=n0th; else thr=nth;
   std::sort(s2a.begin(),s2a.end());
