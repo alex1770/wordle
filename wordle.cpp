@@ -77,6 +77,7 @@ const char*wordlist_all_name="wordlist_nyt20220316_all";
 vector<list> wordnum2endgame;
 int numendgames;
 unsigned int minendgamecount=4;
+int maxscoringpatterns;
 int hardmode=0;
 int exhaust=0;// With exhaustive search certain kinds of reasoning become valid, so we want to keep a note of whether we're exhausting or not.
 bool treestyle_hollow=true;
@@ -410,8 +411,23 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
       if(s==242){lb[s]=1;tot+=1;continue;}
       // Don't need to filter here because oktestwords isn't used in fastmode 1
       int o=minoverwords(oktestwords,equiv[s],depth+1,0,beta-tot-sz,1,0);
-      //if(depth<=prl){prs(depth*4+2);printf("S%da %s %12lld %5d %9.2f s=%d %d o=%d\n",depth,decscore(s).c_str(),totentries,sz,cpu(),s,n,o);fflush(stdout);}
-      if(o>=0)lb[s]=sz+o; else {lb[s]=3*sz-1+max(sz-243,0);ind[n++]=s;}
+      //if(depth<=prl){prs(depth*4+2);printf("S%da %s %12lld %5d tot=%-5d beta=%-5d %9.2f s=%-3d o=%d\n",depth,decscore(s).c_str(),totentries,sz,tot,beta,cpu(),s,o);fflush(stdout);}
+      if(o>=0)lb[s]=sz+o; else {
+        // The (non-GGGGG) guess ("testword") we've just used has partitioned the set of possible hidden words, "hwsubset", into
+        // subsets, of which we are currently looking at a particular one of size sz.
+        // The use of "testword" contributes sz to the total number of guesses.
+        // Then we need a lower bound for the total number of guesses that will be subsequently required for these sz possible hidden words.
+        // At least one guess (the guess after "testword") will need to be made. This contributes another sz to the total number of guesses.
+        // In the best case it will be correct for one of the sz, which means no further guesses are required in that case.
+        // It will also result in a partition of the remaining sz-1 hidden words into subsets of sizes x_1,...,x_k, say.
+        // Ideally each x_i would be equal to 1, which means you only need k=sz-1 more guesses.
+        // But in general, you need at least 2*x_i-1 further guesses for each i, making an overall lower bound of
+        // sz+sz+sum_i (2*x_i-1) = sz+sz+2*(sz-1)-k=4*sz-2-k.
+        // We know k<=sz-1 and k<=maxscoreingpatterns-1, so the overall lower bound is
+        // 4*sz-2-min(sz-1,maxscoreingpatterns-1) = 3*sz-1+max(0,sz-maxscoringpatterns)
+        lb[s]=3*sz-1+max(sz-maxscoringpatterns,0);
+        ind[n++]=s;
+      }
       tot=min(tot+lb[s],infinity);
     }
   }
@@ -437,7 +453,7 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
       lb[s]=inc;
       tot=min(tot+inc,infinity);
     } else {
-      lb[s]=3*sz;
+      lb[s]=max(lb[s],3*sz);// The specific case 3*sz-1 is ruled out because it would be found by fast=1 above
       int v=readlboundcache(depth+1,filtered[s],equiv[s]);
       if(v>=0)lb[s]=max(lb[s],sz+v);
       tot=min(tot+lb[s],infinity);
@@ -1061,6 +1077,14 @@ void initstuff(vector<string>&loadcache,const char*treestyle){
   int i,j,nt=testwords.size(),nh=hiddenwords.size();
   sc.resize(nh,nt);
   for(i=0;i<nh;i++)for(j=0;j<nt;j++)sc[i][j]=score(testwords[j],hiddenwords[i]);
+  maxscoringpatterns=0;
+  for(j=0;j<nt;j++){
+    UC ok[243]={0};
+    for(i=0;i<nh;i++)ok[sc[i][j]]=1;
+    int n=0;
+    for(i=0;i<243;i++)n+=ok[i];
+    if(n>maxscoringpatterns)maxscoringpatterns=n;
+  }
   inithardmodebitvectors();
   alltest.resize(nt);for(j=0;j<nt;j++)alltest[j]=j;
   allhidden.resize(nh);for(j=0;j<nh;j++)allhidden[j]=j;
@@ -1137,6 +1161,7 @@ int main(int ac,char**av){
     fprintf(stderr,"       -d enables depth-only mode: only care about whether can solve within the prescribed number of guesses; don't care about average number of guesses required\n");
     fprintf(stderr,"       -H enables hard mode rules\n");
     fprintf(stderr,"       -h<string> filename for wordlist of possible hidden words\n");
+    fprintf(stderr,"       -l<string> directory name for cache loading\n");
     fprintf(stderr,"       -n<int> number of words to try at each stage (default=infinity which means exhaustive search; setting to a finite value gives a heuristic search,\n");
     fprintf(stderr,"                                                     which means the eventual answer will be an upper bound for the true value)\n");
     fprintf(stderr,"       -N<int> number of words to try at the top level (default=infinity)\n");
