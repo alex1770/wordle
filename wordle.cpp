@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <time.h>
 #include <getopt.h>
+#include <error.h>
 #include <sys/stat.h>
 #include <string>
 #include <vector>
@@ -44,6 +45,10 @@ template<typename... Args> string stringprintf( const string& format, Args... ar
   return string(&buf[0],asize-1);
 }
 const int infinity=1000000000;
+struct cacheentry {
+  int l=0,h=infinity;// lower, upper bounds; 0 <= l <= h <= infinity for valid entries; invalid entries have h=-1.
+  int n,t;// number of reads, time taken to create
+};
 const char*outdir=0;
 int showtop=0,s2mult=2;
 int minoptcacheremdepth=2;
@@ -56,13 +61,13 @@ int maxg=0,n0=0,n1=0,nth=-1,n0th=-1;
 int maxguesses=6;
 int64 cachewrites[MAXDEPTH+1]={0},cachereads[MAXDEPTH+1]={0},cachemiss[MAXDEPTH+1]={0},entrystats[MAXDEPTH+1][5]={0};
 array2d<int64> optstats;
-map<list2,int> opt[MAXDEPTH+1],lbound[MAXDEPTH+1];
+map<list2,cacheentry> cache[MAXDEPTH+1];
 int64 cachesize[MAXDEPTH+1]={0};
 array2d<UC> sc;// wordle score array (map from hiddenword, testword -> colour score as a number in [0,243))
 vector<string> testwords,hiddenwords;
 list alltest,allhidden;
 const list emptylist;
-int64 totentries=0,nextcheck=0,checkinterval=1000000;
+int64 totentries=0,nextcheck=0,checkinterval=100000;
 double cachememlimit=2;// Approximate total memory limit for opt and lbound caches in GB
 double nextcheckpoint=0,checkpointinterval=-1;
 int treeorder[243];// Used to specify the order of scores in decision tree ouptut
@@ -93,9 +98,8 @@ void tick(int i){if(timings)lcpu[i]=cpu();}
 void tock(int i){if(timings){ncpu[i]+=1;tcpu[i]+=cpu()-lcpu[i];}}
 void prtim(){
   int i;
-  if(ncpu[0]==0)return;
-  double x=tcpu[0]/ncpu[0];
-  for(i=0;i<MAXTIM;i++)if(ncpu[i]){
+  double x=(ncpu[0]>0?tcpu[0]/ncpu[0]:0);
+  for(i=1;i<MAXTIM;i++)if(ncpu[i]){
     double t=tcpu[i]-ncpu[i]*x;
     printf("Time %2d: CPU %12gs / %12g = %12gus\n",i,t,ncpu[i],t/ncpu[i]*1e6);
   }
@@ -120,6 +124,7 @@ void prs(int n){
 
 vector<string> load(const char *fn){
   std::ifstream fp(fn);
+  if(fp.fail())error(1,errno,"\nCouldn't open %s",fn);
   string l;
   vector<string> ret;
   while(std::getline(fp,l))ret.push_back(split(l)[0]);
@@ -162,8 +167,6 @@ int score(string &test,string &hidden){
     for(l=0;l<5;l++)if(t[k]==h[l]){s+=w;h[l]=255;break;}
     w*=3;
   }
-      
-  //printf("%s %s %s\n",testwords[i].c_str(),hiddenwords[j].c_str(),decscore(s).c_str());
 
   return s;
 }
@@ -212,22 +215,31 @@ void prunecache(){
     for(d=MAXDEPTH;d>=0;d--){
       n-=cachesize[d];
       cachesize[d]=0;
-      opt[d].clear();
-      lbound[d].clear();
+      cache[d].clear();
       if(n<=nmax)break;
     }
-    if(prl>=0)printf("%9.2f Clearing caches at depths >=%d\n",cpu(),d);
+    if(prl>=0){printf("%9.2f Clearing caches at depths >=%d\n",cpu(),d);fflush(stdout);}
   }
 }
 
-void writecacheentry(int depth,map<list2,int>&cache,list&oktestwords,list&hwsubset,int v){
+void writecacheentry(int depth,list&oktestwords,list&hwsubset,int l,int h){
+  if(depth<0||depth>=MAXDEPTH)return;
+  if(maxguesses-depth<(l==h?minoptcacheremdepth:minlboundcacheremdepth))return;
   list2 key=list2(hardmode?oktestwords:emptylist,hwsubset);
-  map<list2,int>::iterator it;
-  it=cache.find(key);
-  if(it!=cache.end())it->second=max(it->second,v); else {cachesize[depth]+=keysize(key);cachewrites[depth]++;cache[key]=v;}
+  map<list2,cacheentry>::iterator it;
+  it=cache[depth].find(key);
+  if(it!=cache[depth].end()){
+    it->second.l=max(it->second.l,l);
+    it->second.h=min(it->second.h,h);
+  } else {
+    cachesize[depth]+=keysize(key);
+    cachewrites[depth]++;
+    cache[depth][key]=cacheentry({l,h,0,0});
+  }
 }
 
-void loadmap(string path,map<list2,int>*ret,int maxd=MAXDEPTH){
+// Old format loadmap
+void loadmap(string path,bool exact,int maxd=MAXDEPTH){
   std::ifstream fp(path);
   if(!fp){fprintf(stderr,"Couldn't open %s for reading\n",path.c_str());return;}
   string l;
@@ -240,75 +252,103 @@ void loadmap(string path,map<list2,int>*ret,int maxd=MAXDEPTH){
     vector<string> v1=split(v0[1]," "),v2=split(v0[2]," ");
     for(string &s:v1)vi1.push_back(stoi(s));
     for(string &s:v2)vi2.push_back(stoi(s));
-    writecacheentry(d,ret[d],vi1,vi2,v);
+    if(exact)writecacheentry(d,vi1,vi2,v,v); else writecacheentry(d,vi1,vi2,v,infinity);
   }
   fp.close();
 }
 
-void loadcachefromdir(vector<string> loadcache){
+// Old format load both caches from directory
+void loadcachefromdirs(vector<string> loadcache){
   printf("\n");
   for(string dir:loadcache){
     printf("Loading cache from directory \"%s\"...",dir.c_str());fflush(stdout);
-    loadmap(dir+"/exactcache",opt,maxguesses-minoptcacheremdepth);
-    loadmap(dir+"/lboundcache",lbound,maxguesses-minlboundcacheremdepth);
+    loadmap(dir+"/lboundcache",0,maxguesses-minlboundcacheremdepth);
+    loadmap(dir+"/exactcache",1,maxguesses-minoptcacheremdepth);
     printf("...done\n");
     prunecache();
   }
-  // Exact cache takes precedence over lbound cache
-  for(int d=0;d<=MAXDEPTH;d++){
-    for(auto it=lbound[d].cbegin();it!=lbound[d].cend();)if(opt[d].count(it->first)){
-      assert(it->second<=opt[d][it->first]);
-      it=lbound[d].erase(it);
-    }else ++it;
+}
+
+list readlist(FILE*fp){
+  unsigned int n;
+  list l;
+  assert(fread(&n,sizeof(unsigned int),1,fp)==1);
+  l.resize(n);
+  assert(fread(&l[0],sizeof(l[0]),n,fp)==n);
+  return l;
+}
+
+// New format loadmap
+void loadcachefromfiles(vector<string> loadcache){
+  for(string fn:loadcache){
+    FILE*fp=fopen(fn.c_str(),"rb");assert(fp);
+    while(1){
+      int dtg;
+      cacheentry c;
+      if(fread(&dtg,sizeof(int),1,fp)==0)break;
+      list vi1=readlist(fp);
+      list vi2=readlist(fp);
+      assert(fread(&c,sizeof(cacheentry),1,fp)==1);
+      writecacheentry(maxguesses-dtg,vi1,vi2,c.l,c.h);
+    }
+    fclose(fp);
+    prunecache();
   }
 }
 
-void writemap(map<list2,int>*m,string fn){
+void writelist(const list&l,FILE*fp){
+  unsigned int n=l.size();
+  fwrite(&n,sizeof(unsigned int),1,fp);
+  fwrite(&l[0],sizeof(l[0]),n,fp);
+}
+
+void savecache(){
   int d;
   if(!outdir)return;
-  string path=outdir+("/"+fn);
-  FILE*fp=fopen(path.c_str(),"w");assert(fp);
+  string path=outdir+string("/cache");
+  FILE*fp=fopen(path.c_str(),"wb");assert(fp);
   for(d=0;d<=MAXDEPTH;d++){
-    for(auto &pair:m[d]){
-      fprintf(fp,"%d :",maxguesses-d);
-      for(int t:pair.first.first)fprintf(fp," %d",t);
-      fprintf(fp," :");
-      for(int t:pair.first.second)fprintf(fp," %d",t);
-      fprintf(fp," : %d\n",pair.second);
+    for(auto &pair:cache[d]){
+      int dtg=maxguesses-d;
+      fwrite(&dtg,sizeof(int),1,fp);
+      writelist(pair.first.first,fp);
+      writelist(pair.first.second,fp);
+      fwrite(&pair.second,sizeof(cacheentry),1,fp);
     }
   }
   fclose(fp);
 }
 
-void savecache(){
-  writemap(opt,"exactcache");
-  writemap(lbound,"lboundcache");
-}
-
-int readcacheentry(int depth,int minremdepth,map<list2,int>&cache,list&oktestwords,list&hwsubset){
-  if(maxguesses-depth>=minremdepth){
-    map<list2,int>::iterator it;
-    it=cache.find(list2(hardmode?oktestwords:emptylist,hwsubset));
-    if(it!=cache.end()){cachereads[depth]++;return it->second;}else cachemiss[depth]++;
+cacheentry readcacheentry(int depth,list&oktestwords,list&hwsubset){
+  if(maxguesses-depth>=min(minoptcacheremdepth,minlboundcacheremdepth)){
+    map<list2,cacheentry>::iterator it;
+    it=cache[depth].find(list2(hardmode?oktestwords:emptylist,hwsubset));
+    if(it!=cache[depth].end()){cachereads[depth]++;return it->second;}else cachemiss[depth]++;
   }
-  return -1;
+  return cacheentry({0,-1,0,0});
 }
 
-int readoptcache(int depth,list&oktestwords,list&hwsubset){
-  return readcacheentry(depth,minoptcacheremdepth,opt[depth],oktestwords,hwsubset);
+int readoptcache(int depth,list&oktestwords,list&hwsubset){// Not currently used
+  if(maxguesses-depth>=minoptcacheremdepth){
+    cacheentry v=readcacheentry(depth,oktestwords,hwsubset);
+    if(v.l==v.h)return v.l; else return -1;
+  } else return -1;
 }
 
 int readlboundcache(int depth,list&oktestwords,list&hwsubset){
-  return readcacheentry(depth,minlboundcacheremdepth,lbound[depth],oktestwords,hwsubset);
+  if(maxguesses-depth>=minlboundcacheremdepth){
+    cacheentry v=readcacheentry(depth,oktestwords,hwsubset);
+    if(v.h!=-1)return v.l; else return -1;
+  }else return -1;
 }
 
 void writeoptcache(int depth,list&oktestwords,list&hwsubset,int v){
-  if(maxguesses-depth>=minoptcacheremdepth)writecacheentry(depth,opt[depth],oktestwords,hwsubset,v);
+  writecacheentry(depth,oktestwords,hwsubset,v,v);
 }
 
-void writelboundcache(int depth,list&oktestwords,list&hwsubset,int v){
-  if(v>=infinity/2){writeoptcache(depth,oktestwords,hwsubset,infinity);return;}
-  if(maxguesses-depth>=minlboundcacheremdepth)writecacheentry(depth,lbound[depth],oktestwords,hwsubset,v);
+void writelboundcache(int depth,list&oktestwords,list&hwsubset,int l){
+  if(l>=infinity/2)l=infinity;
+  writecacheentry(depth,oktestwords,hwsubset,l,infinity);
 }
 
 void inithardmodebitvectors(){
@@ -699,10 +739,8 @@ int minoverwords(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta,
   entrystats[depth][1]++;
   if(fast==1)return -1;
   if(!rbest&&toplevel<2){
-    int v=readoptcache(depth,oktestwords,hwsubset);
-    if(v>=0)return v;
-    v=readlboundcache(depth,oktestwords,hwsubset);
-    if(v>=beta)return v;
+    cacheentry c=readcacheentry(depth,oktestwords,hwsubset);
+    if(c.h>=0&&(c.l==c.h||c.l>=beta))return c.l;
   }
   entrystats[depth][2]++;
   tick(0);tock(0);// calibration
@@ -716,10 +754,10 @@ int minoverwords(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta,
     nextcheck+=checkinterval;
   }
 
-  // val(x_1,...,x_k) refers to the total number of moves when the partition has sizes {x_1,...,x_k}, and the none of them are correct (GGGGG).
-  // If one of them is correct, then may as well be the last one, so x_k=1, and add suffix '*': val(x_1,...,x_{k-1},1*)
+  // The notation val(x_1,...,x_k) refers to the total number of moves when the partition has sizes {x_1,...,x_k}, and the none of them are correct (no GGGGG).
+  // If one of them is correct, then it may as well be the last one, so x_k=1, and use notation with the suffix '*': val(x_1,...,x_{k-1},1*)
   // In general, the total number of moves isn't just a function of these numbers, so it's a slight abuse of notation,
-  // but it's single-valued if x_i are all <=2.
+  // but it's single-valued if x_i are all <=2 because when there are only 1 or 2 possible words left, the best strategy is always just to pick (either) one.
   // Let n = sum_i x_i    (n=nh in the program)
   // val(1,1,...,1*) = 2n-1
   // val(1,1,...,1) = 2n
@@ -823,9 +861,8 @@ int minoverwords(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta,
   if(rbest||toplevel==2){
     // Even though (given the above condition) we need to find the best move, this lower bound can provide a better cutoff.
     // (Can be useful when starting off with a pre-existing cache using -l.)
-    int v=readoptcache(depth,oktestwords,hwsubset);
-    if(v==-1)v=readlboundcache(depth,oktestwords,hwsubset);
-    if(v>lb1)lb1=v;
+    cacheentry c=readcacheentry(depth,oktestwords,hwsubset);
+    if(c.h>=0&&c.l>lb1)lb1=c.l;
   }
   return minoverwords_fixedlist(trywordlist,oktestwords,hwsubset,depth,toplevel,lb1,beta,rbest);
 }
@@ -1066,24 +1103,36 @@ void analyseplay(string analyse){
   printf("\n");
 }
 
-void initstuff(vector<string>&loadcache,const char*treestyle){
+void initstuff(vector<string>&loadcache_old,vector<string>&loadcache_new,const char*treestyle){
   printf("Initialising...");fflush(stdout);
   hiddenwords=load(wordlist_hidden_name);
   testwords=load(wordlist_all_name);
   orderwordlists();
   optstats.resize(hiddenwords.size()+1,2);
   if(outdir)mkdir(outdir,0777);
-  loadcachefromdir(loadcache);
+  loadcachefromdirs(loadcache_old);
+  loadcachefromfiles(loadcache_new);
   int i,j,nt=testwords.size(),nh=hiddenwords.size();
+  FILE *fp;
   sc.resize(nh,nt);
-  for(i=0;i<nh;i++)for(j=0;j<nt;j++)sc[i][j]=score(testwords[j],hiddenwords[i]);
-  maxscoringpatterns=0;
-  for(j=0;j<nt;j++){
-    UC ok[243]={0};
-    for(i=0;i<nh;i++)ok[sc[i][j]]=1;
-    int n=0;
-    for(i=0;i<243;i++)n+=ok[i];
-    if(n>maxscoringpatterns)maxscoringpatterns=n;
+  // Load scores for most standard situation from disk to improve program startup time
+  if(wordlist_hidden_name==string("wordlist_nyt20220316_hidden")&&
+     wordlist_all_name==string("wordlist_nyt20220316_all")&&
+     (fp=fopen("standardscores","rb"))){
+    assert(fread(&sc[0][0],1,nh*nt,fp)==size_t(nh*nt));
+    fclose(fp);
+    maxscoringpatterns=150;
+  }else{
+    for(i=0;i<nh;i++)for(j=0;j<nt;j++)sc[i][j]=score(testwords[j],hiddenwords[i]);
+    //FILE*fp=fopen("standardscores","wb");fwrite(&sc[0][0],1,nh*nt,fp);fclose(fp);
+    maxscoringpatterns=0;
+    for(j=0;j<nt;j++){
+      UC ok[243]={0};
+      for(i=0;i<nh;i++)ok[sc[i][j]]=1;
+      int n=0;
+      for(i=0;i<243;i++)n+=ok[i];
+      if(n>maxscoringpatterns)maxscoringpatterns=n;
+    }
   }
   inithardmodebitvectors();
   alltest.resize(nt);for(j=0;j<nt;j++)alltest[j]=j;
@@ -1120,9 +1169,9 @@ int main(int ac,char**av){
   printf("Commit %s\n",COMMITDESC);
   int beta=infinity;
   const char*treefn=0,*treestyle=0,*analyse=0,*toplist=0,*topword=0;
-  vector<string> loadcache;
+  vector<string> loadcache_old,loadcache_new;
 
-  while(1)switch(getopt(ac,av,"a:A:b:c:C:dHh:r:R:n:N:g:l:p:S:st:M:Tw:x:z:")){
+  while(1)switch(getopt(ac,av,"a:A:b:c:C:dHh:r:R:n:N:g:l:L:p:S:st:M:Tw:x:z:")){
     case 'a': wordlist_all_name=strdup(optarg);break;
     case 'A': analyse=strdup(optarg);break;
     case 'b': beta=atoi(optarg);break;
@@ -1131,7 +1180,8 @@ int main(int ac,char**av){
     case 'd': depthonly=1;break;
     case 'H': hardmode=1;break;
     case 'h': wordlist_hidden_name=strdup(optarg);break;
-    case 'l': loadcache.push_back(optarg);break;
+    case 'l': loadcache_old.push_back(optarg);break;
+    case 'L': loadcache_new.push_back(optarg);break;
     case 'n': nth=atoi(optarg);break;
     case 'N': n0th=atoi(optarg);break;
     case 'M': s2mult=atoi(optarg);break;
@@ -1161,7 +1211,8 @@ int main(int ac,char**av){
     fprintf(stderr,"       -d enables depth-only mode: only care about whether can solve within the prescribed number of guesses; don't care about average number of guesses required\n");
     fprintf(stderr,"       -H enables hard mode rules\n");
     fprintf(stderr,"       -h<string> filename for wordlist of possible hidden words\n");
-    fprintf(stderr,"       -l<string> directory name for cache loading\n");
+    fprintf(stderr,"       -l<string> directory name(s) for cache loading (old format)\n");
+    fprintf(stderr,"       -L<string> file name(s) for cache loading (new format)\n");
     fprintf(stderr,"       -n<int> number of words to try at each stage (default=infinity which means exhaustive search; setting to a finite value gives a heuristic search,\n");
     fprintf(stderr,"                                                     which means the eventual answer will be an upper bound for the true value)\n");
     fprintf(stderr,"       -N<int> number of words to try at the top level (default=infinity)\n");
@@ -1178,7 +1229,7 @@ int main(int ac,char**av){
     exit(1);
   }
 
-  initstuff(loadcache,treestyle);
+  initstuff(loadcache_old,loadcache_new,treestyle);
   if(nth==-1)nth=testwords.size();
   exhaust=(nth>=int(testwords.size()));
 
