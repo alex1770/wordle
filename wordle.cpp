@@ -388,6 +388,7 @@ void inithardmodebitvectors(){
 // s = score of past test word
 // j = candidate future test word we are determining the legality of
 int okhard(int i,int s,int j){
+  if(hardmode==2)return sc[j][i]==s;
   uint M=greenmask25bit[s];
   uint X=testwords25bit[i]&M;
   uint X1=testwords25bit[j]&M;
@@ -1114,16 +1115,16 @@ void initstuff(vector<string>&loadcache_old,vector<string>&loadcache_new,const c
   loadcachefromfiles(loadcache_new);
   int i,j,nt=testwords.size(),nh=hiddenwords.size();
   FILE *fp;
-  sc.resize(nh,nt);
+  sc.resize(hardmode==2?nt:nh,nt);
   // Load scores for most standard situation from disk to improve program startup time
-  if(wordlist_hidden_name==string("wordlist_nyt20220316_hidden")&&
+  if(hardmode<2&&wordlist_hidden_name==string("wordlist_nyt20220316_hidden")&&
      wordlist_all_name==string("wordlist_nyt20220316_all")&&
      (fp=fopen("standardscores","rb"))){
     assert(fread(&sc[0][0],1,nh*nt,fp)==size_t(nh*nt));
     fclose(fp);
     maxscoringpatterns=150;
   }else{
-    for(i=0;i<nh;i++)for(j=0;j<nt;j++)sc[i][j]=score(testwords[j],hiddenwords[i]);
+    for(i=0;i<nt;i++)for(j=0;j<nt;j++)sc[i][j]=score(testwords[j],testwords[i]);
     //FILE*fp=fopen("standardscores","wb");fwrite(&sc[0][0],1,nh*nt,fp);fclose(fp);
     maxscoringpatterns=0;
     for(j=0;j<nt;j++){
@@ -1171,7 +1172,7 @@ int main(int ac,char**av){
   const char*treefn=0,*treestyle=0,*analyse=0,*toplist=0,*topword=0;
   vector<string> loadcache_old,loadcache_new;
 
-  while(1)switch(getopt(ac,av,"a:A:b:c:C:dHh:r:R:n:N:g:l:L:p:S:st:M:Tw:x:z:")){
+  while(1)switch(getopt(ac,av,"a:A:b:c:C:dHh:r:R:n:N:g:l:L:p:S:st:M:TUw:x:z:")){
     case 'a': wordlist_all_name=strdup(optarg);break;
     case 'A': analyse=strdup(optarg);break;
     case 'b': beta=atoi(optarg);break;
@@ -1193,6 +1194,7 @@ int main(int ac,char**av){
     case 'S': treestyle=strdup(optarg);break;
     case 't': toplist=strdup(optarg);break;
     case 'T': timings=1;break;
+    case 'U': hardmode=2;break;
     case 'w': topword=strdup(optarg);break;
     case 'x': outdir=strdup(optarg);break;
     case 'z': prl=atoi(optarg);break;
@@ -1210,6 +1212,7 @@ int main(int ac,char**av){
     fprintf(stderr,"       -C<float> cache checkpoint interval in seconds (default=no checkpointing)\n");
     fprintf(stderr,"       -d enables depth-only mode: only care about whether can solve within the prescribed number of guesses; don't care about average number of guesses required\n");
     fprintf(stderr,"       -H enables hard mode rules\n");
+    fprintf(stderr,"       -U enables ultrahard mode rules (guesses have to be possible answer words given the previous colour scores)\n");
     fprintf(stderr,"       -h<string> filename for wordlist of possible hidden words\n");
     fprintf(stderr,"       -l<string> directory name(s) for cache loading (old format)\n");
     fprintf(stderr,"       -L<string> file name(s) for cache loading (new format)\n");
@@ -1233,7 +1236,7 @@ int main(int ac,char**av){
   if(nth==-1)nth=testwords.size();
   exhaust=(nth>=int(testwords.size()));
 
-  printf("Mode: %s\n",hardmode?"Hard":"Easy");
+  printf("Mode: %s\n",hardmode==0?"Easy":(hardmode==1?"Hard":"Ultrahard"));
   printf("nth = %d\n",nth);
   printf("n0th = %d\n",n0th);
   printf("Exhaustive search = %d\n",exhaust);
