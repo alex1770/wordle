@@ -1124,7 +1124,8 @@ void initstuff(vector<string>&loadcache_old,vector<string>&loadcache_new,const c
     fclose(fp);
     maxscoringpatterns=150;
   }else{
-    for(i=0;i<nt;i++)for(j=0;j<nt;j++)sc[i][j]=score(testwords[j],testwords[i]);
+    int lnh=(hardmode==2?nt:nh);
+    for(i=0;i<lnh;i++)for(j=0;j<nt;j++)sc[i][j]=score(testwords[j],testwords[i]);
     //FILE*fp=fopen("standardscores","wb");fwrite(&sc[0][0],1,nh*nt,fp);fclose(fp);
     maxscoringpatterns=0;
     for(j=0;j<nt;j++){
