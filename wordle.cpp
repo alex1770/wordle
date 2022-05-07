@@ -1014,13 +1014,39 @@ void initendgames(){
   }
 }
 
+// If the analysis string contains no scoring elements then assume the last item is the hidden word (scoring ggggg) and score the other elements accordingly.
+// E.g.,
+// salet.bybbb.acorn.ybbyy.grand.bgggb -> salet.bybbb.acorn.ybbyy.grand.bgggb [unchanged]
+// salet.acorn.grand                   -> salet.bybbb.acorn.ybbyy.grand.ggggg [assume grand is hidden word]
+string scorestring(string analyse){
+  std::transform(analyse.begin(), analyse.end(), analyse.begin(), [](unsigned char c){ return std::tolower(c); });
+  vector<string> aa=split(analyse,".");
+  int n=aa.size();
+  assert(n>0);
+  if(n==1)goto bp1;
+  for(char c:aa[1])if(c!='b'&&c!='y'&&c!='g')goto bp1;
+  return analyse;
+ bp1:;
+  string ret;
+  for(int i=0;i<n;i++){
+    ret+=aa[i]+".";
+    int sc=score(aa[i],aa[n-1]);
+    ret+=decscore(sc);
+    if(i<n-1)ret+=".";
+  }
+  std::transform(ret.begin(), ret.end(), ret.begin(), [](unsigned char c){ return std::tolower(c); });
+  return ret;
+}
+
 void analyseplay(string analyse){
   int best;
   state state;
-  int i,n=analyse.size(),o,prbest=-1;
+  int i,o,prbest=-1;
   double preve;
   int prevo;
   const char*desc=0;
+  analyse=scorestring(analyse);
+  int n=analyse.size();
   prl=-2;
   exhaust=0;
   nth=hardmode?250:100;
