@@ -23,6 +23,13 @@ using std::min;
 using std::max;
 using std::pair;
 
+// UNIX-specific; only used for mkdir() in -x mode and locking in -j mode
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/file.h>
+#include <fcntl.h>
+#include <unistd.h>
+
 typedef unsigned char UC;
 typedef unsigned int uint;
 typedef signed long long int int64;
@@ -616,7 +623,33 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
   return tot;
 }
 
-int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int depth,int toplevel,int lowerbound,int beta,int *rbest){
+int getnextword(int word,list&trywordlist,const char*joblist){
+  if(!joblist){
+    int n=trywordlist.size();
+    if(word<n)return trywordlist[word]; else return -1;
+  }
+  int fd=open(joblist,O_RDWR);
+  if(fd<0)error(1,errno,"\nCouldn't open joblist \"%s\"",joblist);
+  if(flock(fd,LOCK_EX)<0)error(1,errno,"\nCouldn't acquire lock on joblist \"%s\"",joblist);
+  char ch;
+  off_t pos,offset=-1;
+  string lastline;
+  while((pos=lseek(fd,--offset,SEEK_END))>=0 && read(fd,&ch,1)==1 && ch!='\n')lastline=char(tolower(ch))+lastline;
+  // A seek to before the start of the file causes lseek() to return -1, which is correct in this case (reading 1 byte before the start)
+  if(ftruncate(fd,pos+1))error(1,errno,"ftruncate error");
+  if(flock(fd,LOCK_UN)<0)error(1,errno,"\nCouldn't release lock on joblist \"%s\"",joblist);
+  if(close(fd)<0)error(1,errno,"\nCouldn't close joblist \"%s\"",joblist);
+  if(pos==-1&&lastline.size()==0)return -1;
+  lastline=split(lastline)[0];// Extract word from possibly-annotated word
+  for(int t:alltest)if(lastline==testwords[t])return t;
+  fprintf(stderr,"Word \"%s\" in joblist not found on allowable list\n",lastline.c_str());exit(1);
+}
+
+// Either (i) trywordlist is an list of 1 word given by -w, or
+//        (ii) trywordlist is an list of word given by -t filename[,start[,step]], or
+//        (iii) joblist is the name of a wordlist file that can be read by multiple processes, and whose entries disappear after they have been used
+//
+int minoverwords_givenlist(list&trywordlist,const char*joblist,list&oktestwords,list&hwsubset,int depth,int toplevel,int lowerbound,int beta,int *rbest){
   int nh=hwsubset.size(),nt=oktestwords.size(),remdepth=maxguesses-depth;
   vector<UC> endcount(numendgames);
   int e,biggestendgame=-1,mx=0;
@@ -678,11 +711,15 @@ int minoverwords_fixedlist(list&trywordlist,list&oktestwords,list&hwsubset,int d
   }
   
   int mi=infinity,best=-1,exact=0;
-  int word,maxw=trywordlist.size();
+  int word,maxw;
   double cpu0=cpu();
   double cpu1=cpu0;
-  for(word=0;word<maxw;word++){
-    int testword=trywordlist[word];
+
+  for(word=0;;word++){
+    int testword;
+    testword=getnextword(word,trywordlist,joblist);
+    maxw=joblist?999999:trywordlist.size();
+    if(testword==-1)break;
     if(depth<=prl){prs(depth*4);printf("M%d %s %12lld %9.2f %d/%d %d %d\n",depth,testwords[testword].c_str(),totentries,cpu(),word,maxw,beta,mi);fflush(stdout);}
     int tot=sumoverpartitions(oktestwords,hwsubset,depth,testword,biggestendgame,toplevel,beta);
 
@@ -867,10 +904,10 @@ int minoverwords(list&oktestwords,list&hwsubset,int depth,int toplevel,int beta,
     cacheentry c=readcacheentry(depth,oktestwords,hwsubset);
     if(c.h>=0&&c.l>lb1)lb1=c.l;
   }
-  return minoverwords_fixedlist(trywordlist,oktestwords,hwsubset,depth,toplevel,lb1,beta,rbest);
+  return minoverwords_givenlist(trywordlist,0,oktestwords,hwsubset,depth,toplevel,lb1,beta,rbest);
 }
 
-int toplevel_minoverwords(const char*toplist,const char*topword,int beta,int*rbest,state*rstate=0){
+int minoverwords_toplevel(const char*toplist,const char*joblist,const char*topword,int beta,int*rbest,state*rstate=0){
   vector<string> initial=split(topword?topword:"",".,");
   int i,n=initial.size(),s=0,testword=-1;
   list oktestwords=alltest,hwsubset=allhidden;
@@ -896,23 +933,25 @@ int toplevel_minoverwords(const char*toplist,const char*topword,int beta,int*rbe
   if(rstate){rstate->depth=depth;rstate->oktestwords=oktestwords;rstate->hwsubset=hwsubset;}
   if(i==n&&n>0&&s==242)return 0;// Already solved - no more guesses required
   
-  if(i==n&&!toplist)return minoverwords(oktestwords,hwsubset,depth,1+showtop,beta,0,rbest);
+  if(i==n&&!toplist&&!joblist)return minoverwords(oktestwords,hwsubset,depth,1+showtop,beta,0,rbest);
 
   list trywordlist;
-  if(!toplist){
-    trywordlist.push_back(testword);
-  }else{
-    int start=0,step=1;
-    vector<string> tlf=split(toplist,",");
-    vector<string> fwl=load(tlf[0]);
-    if(tlf.size()>=2)start=std::stoi(tlf[1]);
-    if(tlf.size()>=3)step=std::stoi(tlf[2]);
-    for(int j=start;j>=0&&j<int(fwl.size());j+=step){
-      for(int t:oktestwords)if(fwl[j]==testwords[t])trywordlist.push_back(t);
+  if(!joblist){
+    if(!toplist){
+      trywordlist.push_back(testword);
+    }else{
+      int start=0,step=1;
+      vector<string> tlf=split(toplist,",");
+      vector<string> fwl=load(tlf[0]);
+      if(tlf.size()>=2)start=std::stoi(tlf[1]);
+      if(tlf.size()>=3)step=std::stoi(tlf[2]);
+      for(int j=start;j>=0&&j<int(fwl.size());j+=step){
+        for(int t:oktestwords)if(fwl[j]==testwords[t])trywordlist.push_back(t);
+      }
     }
   }
-  
-  return minoverwords_fixedlist(trywordlist,oktestwords,hwsubset,depth,1+showtop,0,beta,rbest);
+
+  return minoverwords_givenlist(trywordlist,joblist,oktestwords,hwsubset,depth,1+showtop,0,beta,rbest);
   
 }
 
@@ -921,7 +960,7 @@ int printtree(const char*toplist,const char*topword,list oktestwords,list&hwsubs
   state state;
 
   if(depth==0){
-    o=toplevel_minoverwords(toplist,topword,infinity,&best,&state);
+    o=minoverwords_toplevel(toplist,0,topword,infinity,&best,&state);
     depth=state.depth;
     oktestwords=state.oktestwords;
     hwsubset=state.hwsubset;
@@ -1054,11 +1093,11 @@ void analyseplay(string analyse){
   nth=hardmode?250:100;
   n0th=10;
   printf("\n");
-  prevo=toplevel_minoverwords(0,0,infinity,&prbest,&state);
+  prevo=minoverwords_toplevel(0,0,0,infinity,&prbest,&state);
   preve=prevo/double(state.hwsubset.size());
   double totinacc=0,totluck=0;
   for(i=5;i<=n;i+=6){
-    o=toplevel_minoverwords(0,analyse.substr(0,i).c_str(),infinity,&best,&state);
+    o=minoverwords_toplevel(0,0,analyse.substr(0,i).c_str(),infinity,&best,&state);
     double e=o/double(state.hwsubset.size());
     printf("%s: ",analyse.substr(i-5,5).c_str());
     if((i+1)%12){
@@ -1205,10 +1244,10 @@ void initstuff(vector<string>&loadcache_old,vector<string>&loadcache_new,const c
 int main(int ac,char**av){
   printf("Commit %s\n",COMMITDESC);
   int beta=infinity;
-  const char*treefn=0,*treestyle=0,*analyse=0,*toplist=0,*topword=0;
+  const char*treefn=0,*treestyle=0,*analyse=0,*toplist=0,*joblist=0,*topword=0;
   vector<string> loadcache_old,loadcache_new;
 
-  while(1)switch(getopt(ac,av,"a:A:b:c:C:deHh:r:R:n:N:g:l:L:p:S:st:M:TUw:x:z:")){
+  while(1)switch(getopt(ac,av,"a:A:b:c:C:deHh:j:r:R:n:N:g:l:L:p:S:st:M:TUw:x:z:")){
     case 'a': wordlist_all_name=strdup(optarg);break;
     case 'A': analyse=strdup(optarg);break;
     case 'b': beta=atoi(optarg);break;
@@ -1218,6 +1257,7 @@ int main(int ac,char**av){
     case 'e': writestandardscores=true;break;
     case 'H': hardmode=1;break;
     case 'h': wordlist_hidden_name=strdup(optarg);break;
+    case 'j': joblist=strdup(optarg);break;
     case 'l': loadcache_old.push_back(optarg);break;
     case 'L': loadcache_new.push_back(optarg);break;
     case 'n': nth=atoi(optarg);break;
@@ -1257,10 +1297,11 @@ int main(int ac,char**av){
     fprintf(stderr,"       -s enables \"show top\" mode, to make it evaluate all moves at the top level without using a beta cutoff\n");
     fprintf(stderr,"       -S<string> set style of decision tree printing: h=hollow or f=full, optionally followed by sort order of B, G, Y. E.g., f, hBGY or fGYB\n");
     fprintf(stderr,"       -w<string> start game in this state, e.g., salet.BBBYB or salet.BBBYB.drone or salet.BBBYB.drone.YBBBG\n");
-    fprintf(stderr,"\n       === Advanced options ===\n\n");
+    fprintf(stderr,"\n       === Development options ===\n\n");
     fprintf(stderr,"       -b<int> beta cutoff (default infinity)\n");
     fprintf(stderr,"       -c<float> approximate memory limit for cache in GB\n");
     fprintf(stderr,"       -C<float> cache checkpoint interval in seconds (default=no checkpointing)\n");
+    fprintf(stderr,"       -j<string> filename: evaluate words line-by-line from this file, starting with last line, deleting them as they are processed\n");
     fprintf(stderr,"       -l<string> directory name(s) for cache loading (old format)\n");
     fprintf(stderr,"       -L<string> file name(s) for cache loading (new format)\n");
     fprintf(stderr,"       -n<int> number of words to try at each stage (default=infinity which means exhaustive search; setting to a finite value gives a heuristic search,\n");
@@ -1287,6 +1328,7 @@ int main(int ac,char**av){
   printf("maxguesses = %d\n",maxguesses);
   printf("beta = %d\n",beta);
   printf("showtop = %d\n",showtop);
+  printf("joblist = %s\n",joblist?joblist:"(not given)");
   printf("top-level list = %s\n",toplist?toplist:"(not given)");
   printf("top-level word = %s\n",topword?topword:"(not given)");
   if(checkpointinterval<0)printf("Cache checkpointing off\n"); else printf("Cache checkpoint interval = %gs\n",checkpointinterval);
@@ -1300,10 +1342,12 @@ int main(int ac,char**av){
   printf("Number of endgames = %d\n",numendgames);
   printf("Cache memory limit ~= %.1f GB\n",cachememlimit);
   fflush(stdout);
+  if(joblist&&(toplist||topword)){fprintf(stderr,"Can't use -j with -t or -w options\n");exit(1);}
   double cpu0=cpu();
   int i,o,nh;
   if(analyse)analyseplay(analyse); else {
     if(treefn){
+      assert(!joblist);
       FILE*tfp=fopen(treefn,"w");assert(tfp);
       list test0=alltest,hidden0=allhidden;
       o=printtree(toplist,topword,test0,hidden0,"",0,tfp);
@@ -1313,7 +1357,7 @@ int main(int ac,char**av){
     }else{
       int best;
       state state;
-      o=toplevel_minoverwords(toplist,topword,beta,&best,&state);
+      o=minoverwords_toplevel(toplist,joblist,topword,beta,&best,&state);
       printf("Best first guess = %s\n",best>=0?testwords[best].c_str():"no-legal-guess");
       nh=state.hwsubset.size();
     }
