@@ -1265,11 +1265,13 @@ int main(int ac,char**av){
     fprintf(stderr,"       -L<string> file name(s) for cache loading (new format)\n");
     fprintf(stderr,"       -n<int> number of words to try at each stage (default=infinity which means exhaustive search; setting to a finite value gives a heuristic search,\n");
     fprintf(stderr,"                                                     which means the eventual answer will be an upper bound for the true value)\n");
+    fprintf(stderr,"       -M<int> set s2 multiplier (for heuristic ordering)\n");
     fprintf(stderr,"       -N<int> number of words to try at the top level (default=infinity)\n");
     fprintf(stderr,"       -r<int> only use the exact cache when the remaining depth is at least this number\n");
     fprintf(stderr,"       -R<int> only use the lower bound cache when the remaining depth is at least this number\n");
+    fprintf(stderr,"       -t<string> filename[,start[,step]]: evaluate words from this file [from start line [in steps of step]]\n");
     fprintf(stderr,"       -T enables timings (will slow it down)\n");
-    fprintf(stderr,"       -x<string> output directory (for saving cache files etc)-\n");
+    fprintf(stderr,"       -x<string> output directory (for saving cache files etc)\n");
     fprintf(stderr,"       -z<int> debug depth: print messages at depths up to this number\n");
     exit(1);
   }
