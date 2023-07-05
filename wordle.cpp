@@ -77,7 +77,7 @@ uint greenmask25bit[243];
 vector<uint> testwords25bit;
 int depthonly=0;
 int prl=-1;
-const char*wordlist_hidden_name="wordlist_nyt20220830_hidden";
+const char*wordlist_hidden_name="wordlist_nyt20230701_hidden";
 const char*wordlist_all_name="wordlist_nyt20220830_all";
 vector<list> wordnum2endgame;
 int numendgames;
