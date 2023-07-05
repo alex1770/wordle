@@ -11,7 +11,7 @@ ifneq ($(CURRDESC),$(PREVDESC))
   $(shell echo '$(CURRDESC)' > gitdescription)
 endif
 
-CFLAGS:= -std=c++14 -Wall -DCOMMITDESC=$(COMMITDESC)
+CFLAGS:= -std=c++17 -Wall -DCOMMITDESC=$(COMMITDESC)
 ifneq ($(filter deb,$(MAKECMDGOALS)),)
   CFLAGS:= $(CFLAGS) -g
 else
