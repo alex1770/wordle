@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <utility>
 #include <fstream>
+#include <filesystem>
 using std::string;
 using std::vector;
 using std::array;
@@ -77,8 +78,8 @@ uint greenmask25bit[243];
 vector<uint> testwords25bit;
 int depthonly=0;
 int prl=-1;
-const char*wordlist_hidden_name="wordlist_nyt20230701_hidden";
-const char*wordlist_all_name="wordlist_nyt20220830_all";
+string wordlist_hidden_name="wordlist_nyt20230701_hidden";
+string wordlist_all_name="wordlist_nyt20220830_all";
 vector<list> wordnum2endgame;
 int numendgames;
 unsigned int minendgamecount=4;
@@ -86,6 +87,7 @@ int maxscoringpatterns;
 int hardmode=0;
 int exhaust=0;// With exhaustive search certain kinds of reasoning become valid, so we want to keep a note of whether we're exhausting or not.
 bool treestyle_hollow=true;
+bool writestandardscores=false;
 struct state {
   int depth;
   list oktestwords,hwsubset;
@@ -122,9 +124,9 @@ void prs(int n){
   for(int i=0;i<n;i++)printf(" ");
 }
 
-vector<string> load(const char *fn){
+vector<string> load(string fn){
   std::ifstream fp(fn);
-  if(fp.fail())error(1,errno,"\nCouldn't open %s",fn);
+  if(fp.fail())error(1,errno,"\nCouldn't open %s",fn.c_str());
   string l;
   vector<string> ret;
   while(std::getline(fp,l))ret.push_back(split(l)[0]);
@@ -902,7 +904,7 @@ int toplevel_minoverwords(const char*toplist,const char*topword,int beta,int*rbe
   }else{
     int start=0,step=1;
     vector<string> tlf=split(toplist,",");
-    vector<string> fwl=load(tlf[0].c_str());
+    vector<string> fwl=load(tlf[0]);
     if(tlf.size()>=2)start=std::stoi(tlf[1]);
     if(tlf.size()>=3)step=std::stoi(tlf[2]);
     for(int j=start;j>=0&&j<int(fwl.size());j+=step){
@@ -1130,6 +1132,10 @@ void analyseplay(string analyse){
   printf("\n");
 }
 
+string get_basename(const string& filename){
+  std::filesystem::path p(filename);
+  return p.filename().string();
+}
 void initstuff(vector<string>&loadcache_old,vector<string>&loadcache_new,const char*treestyle){
   printf("Initialising...");fflush(stdout);
   hiddenwords=load(wordlist_hidden_name);
@@ -1143,24 +1149,27 @@ void initstuff(vector<string>&loadcache_old,vector<string>&loadcache_new,const c
   FILE *fp;
   sc.resize(hardmode==2?nt:nh,nt);
   // Load scores for most standard situation from disk to improve program startup time
-  if(hardmode<2&&wordlist_hidden_name==string("wordlist_nyt20220316_hidden")&&
-     wordlist_all_name==string("wordlist_nyt20220316_all")&&
-     (fp=fopen("standardscores","rb"))){
+  string stdscorename="standardscores__"+get_basename(wordlist_all_name)+"__"+get_basename(wordlist_hidden_name);
+  if(hardmode<2&&(fp=fopen(stdscorename.c_str(),"rb"))){
     assert(fread(&sc[0][0],1,nh*nt,fp)==size_t(nh*nt));
     fclose(fp);
-    maxscoringpatterns=150;
   }else{
     int lnh=(hardmode==2?nt:nh);
     for(i=0;i<lnh;i++)for(j=0;j<nt;j++)sc[i][j]=score(testwords[j],testwords[i]);
-    //FILE*fp=fopen("standardscores","wb");fwrite(&sc[0][0],1,nh*nt,fp);fclose(fp);
-    maxscoringpatterns=0;
-    for(j=0;j<nt;j++){
-      UC ok[243]={0};
-      for(i=0;i<nh;i++)ok[sc[i][j]]=1;
-      int n=0;
-      for(i=0;i<243;i++)n+=ok[i];
-      if(n>maxscoringpatterns)maxscoringpatterns=n;
+    if(writestandardscores){
+      FILE*fp=fopen(stdscorename.c_str(),"wb");
+      if(!fp)error(1,errno,"\nCouldn't open %s for writing",stdscorename.c_str());
+      fwrite(&sc[0][0],1,nh*nt,fp);
+      fclose(fp);
     }
+  }
+  maxscoringpatterns=0;
+  for(j=0;j<nt;j++){
+    UC ok[243]={0};
+    for(i=0;i<nh;i++)ok[sc[i][j]]=1;
+    int n=0;
+    for(i=0;i<243;i++)n+=ok[i];
+    if(n>maxscoringpatterns)maxscoringpatterns=n;
   }
   inithardmodebitvectors();
   alltest.resize(nt);for(j=0;j<nt;j++)alltest[j]=j;
@@ -1199,13 +1208,14 @@ int main(int ac,char**av){
   const char*treefn=0,*treestyle=0,*analyse=0,*toplist=0,*topword=0;
   vector<string> loadcache_old,loadcache_new;
 
-  while(1)switch(getopt(ac,av,"a:A:b:c:C:dHh:r:R:n:N:g:l:L:p:S:st:M:TUw:x:z:")){
+  while(1)switch(getopt(ac,av,"a:A:b:c:C:deHh:r:R:n:N:g:l:L:p:S:st:M:TUw:x:z:")){
     case 'a': wordlist_all_name=strdup(optarg);break;
     case 'A': analyse=strdup(optarg);break;
     case 'b': beta=atoi(optarg);break;
     case 'c': cachememlimit=atof(optarg);break;
     case 'C': checkpointinterval=atof(optarg);break;
     case 'd': depthonly=1;break;
+    case 'e': writestandardscores=true;break;
     case 'H': hardmode=1;break;
     case 'h': wordlist_hidden_name=strdup(optarg);break;
     case 'l': loadcache_old.push_back(optarg);break;
@@ -1232,27 +1242,32 @@ int main(int ac,char**av){
   if(optind<ac){
   err0:
     fprintf(stderr,"Usage: wordle [options]\n");
+    fprintf(stderr,"\n       === Normal options ===\n\n");
     fprintf(stderr,"       -a<string> filename for wordlist of allowable guesses\n");
+    fprintf(stderr,"       -h<string> filename for wordlist of possible hidden words\n");
+    fprintf(stderr,"\n");
+    fprintf(stderr,"       -H enables hard mode rules\n");
+    fprintf(stderr,"       -U enables ultrahard mode rules (guesses have to be possible answer words given the previous colour scores)\n");
+    fprintf(stderr,"\n");
     fprintf(stderr,"       -A<string> (experimental) analyse your play for luck and skill. E.g., -A salet.bbbyb.drone.ybbbg\n");
+    fprintf(stderr,"       -d enables depth-only mode: only care about whether can solve within the prescribed number of guesses; don't care about average number of guesses required\n");
+    fprintf(stderr,"       -e enables writing of start-up file to current directory (to speed up initialisation)\n");
+    fprintf(stderr,"       -g<int> maximum number of guesses, or max depth; default = 6\n");
+    fprintf(stderr,"       -p<string> filename for strategy tree output (default = no tree output)\n");
+    fprintf(stderr,"       -s enables \"show top\" mode, to make it evaluate all moves at the top level without using a beta cutoff\n");
+    fprintf(stderr,"       -S<string> set style of decision tree printing: h=hollow or f=full, optionally followed by sort order of B, G, Y. E.g., f, hBGY or fGYB\n");
+    fprintf(stderr,"       -w<string> start game in this state, e.g., salet.BBBYB or salet.BBBYB.drone or salet.BBBYB.drone.YBBBG\n");
+    fprintf(stderr,"\n       === Advanced options ===\n\n");
     fprintf(stderr,"       -b<int> beta cutoff (default infinity)\n");
     fprintf(stderr,"       -c<float> approximate memory limit for cache in GB\n");
     fprintf(stderr,"       -C<float> cache checkpoint interval in seconds (default=no checkpointing)\n");
-    fprintf(stderr,"       -d enables depth-only mode: only care about whether can solve within the prescribed number of guesses; don't care about average number of guesses required\n");
-    fprintf(stderr,"       -H enables hard mode rules\n");
-    fprintf(stderr,"       -U enables ultrahard mode rules (guesses have to be possible answer words given the previous colour scores)\n");
-    fprintf(stderr,"       -h<string> filename for wordlist of possible hidden words\n");
     fprintf(stderr,"       -l<string> directory name(s) for cache loading (old format)\n");
     fprintf(stderr,"       -L<string> file name(s) for cache loading (new format)\n");
     fprintf(stderr,"       -n<int> number of words to try at each stage (default=infinity which means exhaustive search; setting to a finite value gives a heuristic search,\n");
     fprintf(stderr,"                                                     which means the eventual answer will be an upper bound for the true value)\n");
     fprintf(stderr,"       -N<int> number of words to try at the top level (default=infinity)\n");
-    fprintf(stderr,"       -g<int> maximum number of guesses, or max depth; default = 6\n");
-    fprintf(stderr,"       -p<string> filename for strategy tree output (default = no tree output)\n");
     fprintf(stderr,"       -r<int> only use the exact cache when the remaining depth is at least this number\n");
     fprintf(stderr,"       -R<int> only use the lower bound cache when the remaining depth is at least this number\n");
-    fprintf(stderr,"       -s enables \"show top\" mode, to make it evaluate all moves at the top level without using a beta cutoff\n");
-    fprintf(stderr,"       -S<string> set style of decision tree printing: h=hollow or f=full, optionally followed by sort order of B, G, Y. E.g., f, hBGY or fGYB\n");
-    fprintf(stderr,"       -w<string> start game in this state, e.g., salet.BBBYB or salet.BBBYB.drone or salet.BBBYB.drone.YBBBG\n");
     fprintf(stderr,"       -T enables timings (will slow it down)\n");
     fprintf(stderr,"       -x<string> output directory (for saving cache files etc)-\n");
     fprintf(stderr,"       -z<int> debug depth: print messages at depths up to this number\n");
@@ -1275,8 +1290,8 @@ int main(int ac,char**av){
   if(checkpointinterval<0)printf("Cache checkpointing off\n"); else printf("Cache checkpoint interval = %gs\n",checkpointinterval);
   printf("s2mult = %d\n",s2mult);
   printf("depthonly = %d\n",depthonly);
-  printf("Test wordlist filename = %s, size = %lu\n",wordlist_all_name,testwords.size());
-  printf("Hidden wordlist filename = %s, size = %lu\n",wordlist_hidden_name,hiddenwords.size());
+  printf("Test wordlist filename = %s, size = %lu\n",wordlist_all_name.c_str(),testwords.size());
+  printf("Hidden wordlist filename = %s, size = %lu\n",wordlist_hidden_name.c_str(),hiddenwords.size());
   printf("tree filename = %s\n",treefn?treefn:"(not given)");
   printf("min{opt,lbound}cacheremdepths = %d %d\n",minoptcacheremdepth,minlboundcacheremdepth);
   printf("minendgamecount = %d\n",minendgamecount);
