@@ -95,6 +95,7 @@ int hardmode=0;
 int exhaust=0;// With exhaustive search certain kinds of reasoning become valid, so we want to keep a note of whether we're exhausting or not.
 bool treestyle_hollow=true;
 bool writestandardscores=false;
+string toplevelhistory;// Concatenation of words tried so far at the top level
 struct state {
   int depth;
   list oktestwords,hwsubset;
@@ -623,26 +624,38 @@ int sumoverpartitions(list&oktestwords,list&hwsubset,int depth,int testword,int 
   return tot;
 }
 
+// Return number of next word to be evaluated at the top level, or -1 if there are none left
 int getnextword(int word,list&trywordlist,const char*joblist){
   if(!joblist){
     int n=trywordlist.size();
     if(word<n)return trywordlist[word]; else return -1;
   }
-  int fd=open(joblist,O_RDWR);
-  if(fd<0)error(1,errno,"\nCouldn't open joblist \"%s\"",joblist);
-  if(flock(fd,LOCK_EX)<0)error(1,errno,"\nCouldn't acquire lock on joblist \"%s\"",joblist);
-  char ch;
-  off_t pos,offset=-1;
-  string lastline;
-  while((pos=lseek(fd,--offset,SEEK_END))>=0 && read(fd,&ch,1)==1 && ch!='\n')lastline=char(tolower(ch))+lastline;
-  // A seek to before the start of the file causes lseek() to return -1, which is correct in this case (reading 1 byte before the start)
-  if(ftruncate(fd,pos+1))error(1,errno,"ftruncate error");
-  if(flock(fd,LOCK_UN)<0)error(1,errno,"\nCouldn't release lock on joblist \"%s\"",joblist);
-  if(close(fd)<0)error(1,errno,"\nCouldn't close joblist \"%s\"",joblist);
-  if(pos==-1&&lastline.size()==0)return -1;
-  lastline=split(lastline)[0];// Extract word from possibly-annotated word
-  for(int t:alltest)if(lastline==testwords[t])return t;
-  fprintf(stderr,"Word \"%s\" in joblist not found on allowable list\n",lastline.c_str());exit(1);
+  string chosenword;
+  if(strncmp(joblist,"prog:",5)){// The joblist is a simple file
+    int fd=open(joblist,O_RDWR);
+    if(fd<0)error(1,errno,"\nCouldn't open joblist \"%s\"",joblist);
+    if(flock(fd,LOCK_EX)<0)error(1,errno,"\nCouldn't acquire lock on joblist \"%s\"",joblist);
+    char ch;
+    off_t pos,offset=-1;
+    string lastline;
+    while((pos=lseek(fd,--offset,SEEK_END))>=0 && read(fd,&ch,1)==1 && ch!='\n')lastline=char(tolower(ch))+lastline;
+    // A seek to before the start of the file causes lseek() to return -1, which is correct in this case (reading 1 byte before the start)
+    if(ftruncate(fd,pos+1))error(1,errno,"ftruncate error");
+    if(flock(fd,LOCK_UN)<0)error(1,errno,"\nCouldn't release lock on joblist \"%s\"",joblist);
+    if(close(fd)<0)error(1,errno,"\nCouldn't close joblist \"%s\"",joblist);
+    if(pos==-1&&lastline.size()==0)return -1;
+    chosenword=split(lastline)[0];// Extract word from possibly-annotated word
+  }else{// The "joblist" is a program that returns the next word
+    string command=(joblist+5)+toplevelhistory;// Remove "prog:" prefix from joblist to get a path to the executable
+    FILE *fp=popen(command.c_str(),"r");
+    char l[1000];
+    if(!fgets(l,1000,fp))error(1,errno,"Couldn't run %s",command.c_str());
+    pclose(fp);
+    chosenword=string(l).substr(0,5);
+    if(chosenword=="xxxxx")return -1;
+  }
+  for(int t:alltest)if(chosenword==testwords[t])return t;
+  fprintf(stderr,"Word \"%s\" in joblist \"%s\" not found on allowable list\n",chosenword.c_str(),joblist);exit(1);
 }
 
 // Either (i) trywordlist is an list of 1 word given by -w, or
@@ -723,9 +736,10 @@ int minoverwords_givenlist(list&trywordlist,const char*joblist,list&oktestwords,
     if(depth<=prl){prs(depth*4);printf("M%d %s %12lld %9.2f %d/%d %d %d\n",depth,testwords[testword].c_str(),totentries,cpu(),word,maxw,beta,mi);fflush(stdout);}
     int tot=sumoverpartitions(oktestwords,hwsubset,depth,testword,biggestendgame,toplevel,beta);
 
+    if(toplevel)toplevelhistory+=" "+testwords[testword];
     if(toplevel&&prl>=-1){
       double cpu2=cpu();
-      printf("First guess %s %s= %d     %5d / %5d    dCPU = %9.2f   CPU = %9.2f\n",
+      printf("First guess %s %s= %10d     %5d / %5d    dCPU = %9.2f   CPU = %9.2f\n",
              testwords[testword].c_str(),tot<beta||tot==infinity?" ":">",tot,word,maxw,cpu2-cpu1,cpu2-cpu0);
       cpu1=cpu2;
       fflush(stdout);
@@ -1301,7 +1315,8 @@ int main(int ac,char**av){
     fprintf(stderr,"       -b<int> beta cutoff (default infinity)\n");
     fprintf(stderr,"       -c<float> approximate memory limit for cache in GB\n");
     fprintf(stderr,"       -C<float> cache checkpoint interval in seconds (default=no checkpointing)\n");
-    fprintf(stderr,"       -j<string> filename: evaluate words line-by-line from this file, starting with last line, deleting them as they are processed\n");
+    fprintf(stderr,"       -j<string> <filename>: evaluate words line-by-line from this file, starting with last line, deleting them as they are processed\n");
+    fprintf(stderr,"                  OR prog:<progname>: choose the next word to be evaluated by executing <progname>\n");
     fprintf(stderr,"       -l<string> directory name(s) for cache loading (old format)\n");
     fprintf(stderr,"       -L<string> file name(s) for cache loading (new format)\n");
     fprintf(stderr,"       -n<int> number of words to try at each stage (default=infinity which means exhaustive search; setting to a finite value gives a heuristic search,\n");
