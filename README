@@ -1,4 +1,18 @@
-The program wordle evaluates how good, on average, different words are as first guesses in the game of Wordle. See http://sonorouschocolate.com/notes/index.php?title=The_best_strategies_for_Wordle for some results and a brief description.
+The program wordle evaluates how good, on average, different words are as first guesses in the game of Wordle.
+
+See (Jan 2022) http://sonorouschocolate.com/notes/index.php?title=The_best_strategies_for_Wordle for some results and a brief description, and
+
+    (March 2022) https://sonorouschocolate.com/notes/index.php/The_best_strategies_for_Wordle,_part_2 for an updated article, and
+
+    (July 2023) https://sonorouschocolate.com/notes/index.php/The_best_strategies_for_Wordle,_part_3_(July_2023) a further update using an extended hidden word list.
+
+The above articles give some other example usage modes for the program.
+
+Note that the default hidden word list here (wordlist_hidden) was changed in August 2023 to the extended version (3158 words).
+To refer to the previous major version (2309 words), use the option -h wordlist_nyt20220830_hidden.
+
+The description below was written for the original word lists, not the current default word lists.
+To get the output as described, add the options -a wordlist_orig_all -h wordlist_orig_hidden.
 
 Example usage (can use -H with each to get hard mode):
 
